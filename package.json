@@ -1,7 +1,7 @@
 {
-  "name": "pm-copilot",
+  "name": "@dkships/pm-copilot",
   "version": "0.2.0",
-  "description": "MCP server for product management — synthesizes HelpScout tickets and ProductLift feature requests",
+  "description": "MCP server that triangulates customer support tickets and feature requests to help PMs decide what to build next",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -9,8 +9,21 @@
     "dev": "tsc --watch",
     "start": "node dist/index.js"
   },
-  "keywords": ["mcp", "product-management", "helpscout", "productlift"],
+  "keywords": [
+    "mcp",
+    "product-management",
+    "helpscout",
+    "productlift",
+    "customer-feedback",
+    "prioritization"
+  ],
   "license": "MIT",
+  "author": "David Kelly <david@dmkthinks.org>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dkships/pm-copilot.git"
+  },
+  "homepage": "https://github.com/dkships/pm-copilot",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0",
     "zod": "^3.24.0",

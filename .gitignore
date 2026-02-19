@@ -3,6 +3,5 @@ dist/
 .env
 *.tsbuildinfo
 .DS_Store
-.mcp.json
 claude-code-notes.md
 moonshot-ideas.md

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "pm-copilot": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "HELPSCOUT_APP_ID": "",
+        "HELPSCOUT_APP_SECRET": "",
+        "PRODUCTLIFT_API_KEY": ""
+      }
+    }
+  }
+}

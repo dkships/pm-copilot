@@ -1,26 +1,79 @@
 # PM Copilot
 
-An MCP server that triangulates customer signals across support tickets and feature requests to generate prioritized product plans.
+An MCP server that triangulates customer support tickets and feature requests to help PMs decide what to build next.
 
-## What it does
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.26.0-green)](#)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-brightgreen?logo=node.js&logoColor=white)](#)
 
-Product managers drown in fragmented customer data. Support tickets show what's broken. Feature request boards show what's wanted. But the highest-confidence signal is when the same theme appears in *both* places independently — a customer writing in about calendar sync problems while others are voting for calendar integrations on your roadmap. PM Copilot finds those convergent signals automatically.
+---
 
-The server connects to HelpScout (support tickets) and ProductLift (feature requests), normalizes them into a common format, matches them against configurable themes, and scores each theme using a weighted formula that gives convergent signals a 2x priority boost. The output is structured data that Claude synthesizes into actionable product plans — complete with evidence counts, customer quotes, and severity breakdowns.
+> **Real results:** Analyzed 2,370 signals (2,136 support tickets + 234 feature requests) across 3 products in 55 seconds. Identified 16 themes, 15 convergent. Top priority: Booking & Scheduling (score: 134.6) — 629 tickets + 77 feature requests pointing at the same problem.
 
-## Real results
+---
 
-Tested against live AppSumo Originals data:
+## What Makes This Different
 
-> Analyzed 2,370 signals (2,136 support tickets + 234 feature requests) across 3 products in 55 seconds. Identified 16 themes, 15 convergent. Top priority: Booking & Scheduling (134.6 score) — 629 tickets + 77 feature requests, with KPI context showing booking completion rate dropped 8 points and churn spiked 1.1%.
+- **Signal triangulation** — Not just data access. Matches support tickets against feature requests to find convergent themes, then scores them with a weighted formula that gives convergent signals a 2x priority boost.
+- **Composability** — Designed to work *with* other MCP servers. Pass churn data from Metabase or traffic trends from Google Analytics into `generate_product_plan` via `kpi_context`, and the methodology adjusts priorities accordingly.
+- **PM methodology built in** — Opinionated scoring based on 7 years of real product management across 9 products and 1M+ users. Not a generic framework — an actual decision-making process exposed as an MCP resource.
+- **PII scrubbing** — Customer data never reaches the LLM unfiltered. SSNs, credit cards (Luhn-validated), emails, and phone numbers are redacted before analysis. Agent responses are filtered out of quotes.
 
-Response sizes by detail level: **summary** ~19KB (default, LLM-optimized), **standard** ~68KB (adds data point titles), **full** ~563KB (all data, for export).
+## Architecture
+
+```mermaid
+graph TD
+    A[Claude Desktop / Code] -->|stdio| B[pm-copilot]
+    A -->|stdio| C[Metabase MCP]
+    A -->|stdio| D[Google Analytics MCP]
+    B -->|Qualitative| E[HelpScout: tickets]
+    B -->|Qualitative| F[ProductLift: feature requests]
+    C -->|Quantitative| G[Conversion, Churn, Revenue]
+    D -->|Acquisition| H[Traffic, Channels, Trends]
+    B -.->|kpi_context| A
+```
+
+Claude orchestrates multiple MCP servers. PM Copilot handles qualitative customer signals. Other servers provide quantitative business metrics. The `kpi_context` parameter is the integration point — no point-to-point integrations required.
+
+## Quick Start
+
+```bash
+git clone https://github.com/dkships/pm-copilot.git
+cd pm-copilot
+npm install
+cp .env.example .env   # Edit with your credentials
+npm run build
+```
+
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "pm-copilot": {
+      "command": "node",
+      "args": ["/absolute/path/to/pm-copilot/dist/index.js"]
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add pm-copilot -- node /absolute/path/to/pm-copilot/dist/index.js
+```
+
+Or use the `.mcp.json` already in the project root — Claude Code picks it up automatically.
 
 ## Tools
 
 ### `synthesize_feedback`
 
-Cross-references both data sources and returns theme-matched analysis with priority scores.
+Cross-references HelpScout tickets and ProductLift feature requests, returns theme-matched analysis with priority scores.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -34,7 +87,7 @@ Returns themes sorted by priority score, each with reactive/proactive counts, co
 
 ### `generate_product_plan`
 
-Builds a prioritized product plan with evidence summaries and customer quotes. This is the composability entry point — it accepts external business metrics alongside feedback data.
+Builds a prioritized product plan with evidence and customer quotes. Accepts external business metrics via `kpi_context`.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -47,19 +100,14 @@ Builds a prioritized product plan with evidence summaries and customer quotes. T
 | `preview_only` | boolean | false | Audit mode: show what data *would* be sent |
 | `detail_level` | string | `"summary"` | `"summary"` (~7KB), `"standard"` (~21KB), or `"full"` (~584KB) |
 
-Each priority in the response includes: theme name, signal type (reactive/proactive/convergent), priority score, evidence breakdown, and 2-3 representative customer quotes (agent responses filtered out).
-
 ### `get_feature_requests`
 
 Raw ProductLift data access for browsing feature requests directly.
 
-## Resources
-
-### `pm-copilot://methodology`
-
-David Kelly's actual product planning framework — not a generic PM textbook. Covers the 5% rule, convergent signal logic, reactive vs proactive weighting, when business metrics override the formula, quick wins philosophy, and when to override data with judgment.
-
-The methodology is versioned and served as markdown content via the MCP resource protocol.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `portal_name` | string | — | Filter to a specific portal |
+| `include_comments` | boolean | true | Include comments on each request |
 
 ## Composability
 
@@ -69,180 +117,93 @@ When Claude has multiple MCP servers connected — say Metabase for database que
 
 > "Pull our churn data from Metabase, our traffic trends from GA, and then use pm-copilot to create a product plan using all of that context."
 
-Claude calls the Metabase and GA servers first, then passes their output as `kpi_context` to `generate_product_plan`. The methodology resource tells Claude how to weight business metrics against customer signals: rising churn elevates reactive themes, strong growth elevates proactive ones.
+Claude calls the other servers first, then passes their output as `kpi_context`:
 
-This works because MCP servers don't need to know about each other. Claude is the orchestrator. PM Copilot just needs to accept free-text context and return structured analysis. No point-to-point integrations required.
-
-## Quick start
-
-```bash
-# Clone and install
-git clone https://github.com/yourusername/pm-copilot.git
-cd pm-copilot
-npm install
-
-# Configure credentials
-cp .env.example .env
-# Edit .env with your HelpScout and ProductLift credentials
-
-# Build
-npm run build
+```
+generate_product_plan({
+  timeframe_days: 30,
+  kpi_context: "TidyCal churn: 3.2% → 4.1% MoM. Booking completion: 78% → 70%.
+                Organic traffic: +22% MoM. Top landing pages: /pricing, /features."
+})
 ```
 
-### Add to Claude Desktop
+The methodology resource tells Claude how to weight business metrics against customer signals: rising churn elevates reactive themes, strong growth elevates proactive ones.
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+## Methodology
 
-```json
-{
-  "mcpServers": {
-    "pm-copilot": {
-      "command": "node",
-      "args": ["/absolute/path/to/pm-copilot/dist/index.js"]
-    }
-  }
-}
-```
+PM Copilot exposes a `pm-copilot://methodology` resource — David Kelly's actual product planning framework built over 7 years of launching 9 products to 1M+ users at AppSumo Originals.
 
-### Add to Claude Code
+Key principles:
+- **The 5% rule** — You complete ~5% of what customers ask for each month. The framework identifies which 5% matters most.
+- **Convergent signals always win** — Same theme in both support tickets AND feature requests = highest confidence signal.
+- **Reactive > proactive** — Broken stuff drives churn. You can survive not having a feature; you can't survive errors.
+- **Business metrics override the formula** — Rising churn, dropping conversion, or revenue impact can change everything.
 
-```bash
-claude mcp add pm-copilot -- node /absolute/path/to/pm-copilot/dist/index.js
-```
+The methodology is versioned (v2.0) and served as markdown content via the MCP resource protocol. Claude references it automatically when using `generate_product_plan`.
 
-## Configuration
+## Security
 
-### Environment variables
-
-Create a `.env` file in the project root:
-
-```bash
-# Required: HelpScout OAuth2 credentials
-# Create app at https://secure.helpscout.net/apps/custom/
-HELPSCOUT_APP_ID=your_app_id
-HELPSCOUT_APP_SECRET=your_app_secret
-
-# Optional: ProductLift feature request portals
-# Option A: Multiple portals
-PRODUCTLIFT_PORTALS=tidycal|https://roadmap.tidycal.com|your_key,formrobin|https://roadmap.formrobin.com|your_key
-
-# Option B: Single portal
-PRODUCTLIFT_PORTAL_NAME=tidycal
-PRODUCTLIFT_PORTAL_URL=https://roadmap.tidycal.com
-PRODUCTLIFT_API_KEY=your_key
-```
-
-HelpScout credentials are required. ProductLift is optional — without it, analysis runs on support data only (no convergence detection).
-
-### Theme configuration
-
-`themes.config.json` in the project root defines what themes to look for. Edit it without rebuilding — the file is loaded at runtime.
-
-```json
-{
-  "version": 2,
-  "themes": [
-    {
-      "id": "calendar-sync",
-      "label": "Calendar Sync",
-      "keywords": ["calendar sync", "google calendar", "outlook calendar", "ical"],
-      "category": "integration"
-    }
-  ],
-  "stop_words": ["the", "a", "is", ...],
-  "emerging_theme_min_frequency": 3
-}
-```
-
-Ships with 16 data-driven themes across 9 categories (core, billing, communication, customization, integration, product, account, auth, trust, platform, reliability). Add your own by appending to the `themes` array.
-
-Data points that don't match any known theme are analyzed for emerging patterns using bigram/trigram frequency detection.
-
-## Data privacy
-
-Customer data flows through PM Copilot on its way to Claude. This section documents what gets sent, what gets scrubbed, and what gets excluded entirely.
+Customer data flows through PM Copilot on its way to Claude. All text is scrubbed before it enters the analysis pipeline or leaves the server.
 
 ### PII scrubbing
 
-All customer text is scrubbed before it enters the analysis pipeline or leaves the server:
+| Category | Method | Replacement |
+|----------|--------|-------------|
+| SSNs | Pattern match (`XXX-XX-XXXX`) | `[SSN REDACTED]` |
+| Credit cards | 13-19 digit sequences + Luhn validation | `[CREDIT CARD REDACTED]` |
+| Email addresses | Standard email pattern | `[EMAIL REDACTED]` |
+| Phone numbers | US formats (+1, parens, dashes, dots) | `[PHONE REDACTED]` |
+| Customer email field | Always redacted | `[REDACTED]` |
 
-- **SSNs**: Pattern-matched and replaced with `[SSN REDACTED]`
-- **Credit card numbers**: Matched with Luhn algorithm validation to reduce false positives
-- **Email addresses**: Pattern-matched and replaced with `[EMAIL REDACTED]`
-- **Phone numbers**: US format patterns replaced with `[PHONE REDACTED]`
-- **Customer email field**: Always `[REDACTED]`, regardless of pattern matching
+### What we exclude entirely
 
-### What we decided not to send
-
-| Data | Why it's excluded |
-|------|-------------------|
-| Customer email addresses | Not needed for theme analysis; PII risk outweighs utility |
-| Agent/admin responses | Only customer voice matters for signal analysis; agent replies could leak internal process |
+| Data | Why |
+|------|-----|
+| Agent/admin responses | Only customer voice matters; agent replies could leak internal process |
 | Internal HelpScout notes | May contain credentials, workarounds, internal discussions |
 | Attachments | Could contain screenshots with PII, invoices, medical documents |
 | Voter identities | Vote counts are sufficient; individual identity adds no PM value |
 
 ### Audit controls
 
-- **Preview mode**: Set `preview_only: true` on `generate_product_plan` to see exactly what data would be fetched and sent — without actually fetching it
-- **Response metadata**: Every tool response includes `pii_scrubbing_applied` and `pii_categories_redacted`
-- **Stderr logging**: Each call logs data categories sent (e.g., "helpscout_tickets", "productlift_votes") but never content
+- `preview_only: true` on `generate_product_plan` shows what data *would* be sent without fetching it
+- Every response includes `pii_scrubbing_applied` and `pii_categories_redacted` metadata
+- Data categories logged to stderr on each call (categories only, never content)
 
-### What this does not cover
+## Development
 
-Names in free text (too many false positives to regex reliably), physical addresses (same), and domain-specific identifiers like order IDs (useful for PM analysis, not regulated PII). The `kpi_context` parameter passes through verbatim — the caller is responsible for that content.
-
-## Architecture
-
-```
-src/
-  index.ts              # MCP server, tool registration, shared fetch pipeline
-  helpscout.ts          # HelpScout API v2 client (OAuth2 client credentials)
-  productlift.ts        # ProductLift API v1 client (Bearer token, multi-portal)
-  feedback-analyzer.ts  # Theme matching, scoring engine, emerging theme detection
-  pii-scrubber.ts       # PII pattern detection and redaction
-  methodology.ts        # PM planning framework (MCP resource)
-themes.config.json      # Human-editable theme definitions + keywords
+```bash
+npm install          # Install dependencies
+npm run build        # Compile TypeScript
+npm run dev          # Watch mode
+npm start            # Run the server
 ```
 
-**Scoring formula**: `priority = (frequency * 0.35 + severity * 0.35 + vote_momentum * 0.30) * convergence_boost`
+### Theme configuration
 
-- **Frequency** (0.35): Count of matching data points, normalized across themes
-- **Severity** (0.35): Reactive signals only — thread depth, recency (exponential decay), tag boosts for bug/urgent/escalation
+`themes.config.json` in the project root defines what themes to look for. Edit without rebuilding — loaded at runtime.
+
+Ships with 16 data-driven themes across 9 categories. Add your own by appending to the `themes` array. Unmatched data points are analyzed for emerging patterns using bigram/trigram frequency detection.
+
+### Scoring formula
+
+```
+priority = (frequency × 0.35 + severity × 0.35 + vote_momentum × 0.30) × convergence_boost
+```
+
+- **Frequency** (0.35): Count of data points, normalized across themes
+- **Severity** (0.35): Reactive signals only — thread depth, recency (7-day half-life decay), tag boosts
 - **Vote momentum** (0.30): Proactive signals only — 80% votes + 20% comments
-- **Convergence boost** (2x): Applied when a theme has both reactive and proactive signals
-
-Error handling uses `Promise.allSettled` — if one API is down, analysis continues with data from the other source. All HTTP requests have 45-second timeouts. Auth failures produce specific error messages referencing the relevant `.env` variable. A 5-minute response cache ensures back-to-back tool calls (e.g., `synthesize_feedback` then `generate_product_plan`) share a single fetch.
-
-## Built with
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — built the entire codebase through iterative conversation
-- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) (`@modelcontextprotocol/sdk`)
-- TypeScript, Node.js 18+
-- [Zod](https://github.com/colinhacks/zod) for input validation
-- No ML dependencies — theme matching is keyword-based, emerging themes use n-gram frequency analysis
-
-## Future directions
-
-**v2: MCP App with interactive priority dashboard**
-Return structured UI components instead of raw JSON. An MCP App could render a priority matrix, let PMs drag-and-drop to reorder, and annotate themes with strategic notes — all within the Claude interface.
-
-**PM methodology as an Agent Skill**
-Package the product planning framework as a standalone skill that any Claude agent can use, independent of PM Copilot's data sources. Teams could apply the same prioritization methodology to their own data pipelines.
-
-**Automated weekly product review**
-A scheduled workflow that runs `generate_product_plan` weekly, compares against the previous week's priorities, and posts a diff to Slack or Linear — surfacing what changed, what's trending up, and what dropped off.
+- **Convergence** (2x): Applied when a theme has both reactive and proactive signals
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Make your changes and ensure `npm run build` succeeds with no errors
+3. Ensure `npm run build` succeeds with no errors
 4. Follow existing patterns: tools use `registerTool`, API clients get their own module, PII scrubbing happens at the format layer
 5. Open a pull request
 
-When adding a new data source, create a new client module (e.g., `src/intercom.ts`) and integrate it into `fetchAndAnalyze()` in `index.ts` using the same `Promise.allSettled` pattern for partial failure resilience.
-
 ## License
 
-MIT
+[MIT](LICENSE)
