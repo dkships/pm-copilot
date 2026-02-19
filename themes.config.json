@@ -1,0 +1,127 @@
+{
+  "version": 2,
+  "themes": [
+    {
+      "id": "booking-scheduling",
+      "label": "Booking & Scheduling",
+      "keywords": ["booking", "bookings", "schedule", "scheduling", "appointment", "availability", "time slot", "reschedule", "rescheduling", "recurring", "booking type", "booking types", "booking page", "cancellation", "cancel booking", "no show", "buffer time", "date range"],
+      "category": "core"
+    },
+    {
+      "id": "billing-payment",
+      "label": "Billing & Payment",
+      "keywords": ["billing", "payment", "invoice", "charge", "refund", "subscription", "pricing", "upgrade", "downgrade", "credit card", "receipt", "coupon", "discount", "stripe", "pay per"],
+      "category": "billing"
+    },
+    {
+      "id": "email-smtp",
+      "label": "Email & Delivery",
+      "keywords": ["smtp", "email delivery", "email sending", "campaign", "unsubscribe", "email template", "sender", "deliverability", "confirmation email", "reminder email", "bounce", "spam", "opt-in", "double opt"],
+      "category": "communication"
+    },
+    {
+      "id": "notifications",
+      "label": "Notifications & Reminders",
+      "keywords": ["notification", "notifications", "reminder", "reminders", "email notification", "sms reminder", "alert", "notify", "push notification", "whatsapp"],
+      "category": "communication"
+    },
+    {
+      "id": "whitelabel-branding",
+      "label": "Whitelabel & Branding",
+      "keywords": ["whitelabel", "white label", "cname", "custom domain", "branding", "powered by", "remove logo", "embed", "embedded", "logo", "brand", "custom url"],
+      "category": "customization"
+    },
+    {
+      "id": "account-licensing",
+      "label": "Account & Licensing",
+      "keywords": ["account", "license", "tier", "plan", "upgrade", "downgrade", "cancel account", "lifetime", "agency plan", "individual plan", "free tier", "credits"],
+      "category": "account"
+    },
+    {
+      "id": "calendar-sync",
+      "label": "Calendar Sync",
+      "keywords": ["calendar sync", "google calendar", "outlook calendar", "ical", "calendar integration", "sync calendar", "calendar connect", "google meet", "zoom", "teams meeting", "caldav", "double booking"],
+      "category": "integration"
+    },
+    {
+      "id": "integrations",
+      "label": "Integrations",
+      "keywords": ["zapier", "pabbly", "make.com", "integration", "integrate", "crm", "hubspot", "google drive", "connect", "third party", "workflow"],
+      "category": "integration"
+    },
+    {
+      "id": "api-webhooks",
+      "label": "API & Webhooks",
+      "keywords": ["api", "webhook", "webhooks", "api access", "api endpoint", "rest api", "api key", "developer"],
+      "category": "integration"
+    },
+    {
+      "id": "templates-editor",
+      "label": "Templates & Editor",
+      "keywords": ["template", "templates", "editor", "wysiwyg", "document", "pdf", "form field", "content block", "signature field", "reusable", "duplicate", "fields"],
+      "category": "product"
+    },
+    {
+      "id": "team-collaboration",
+      "label": "Team & Collaboration",
+      "keywords": ["team", "agency", "member", "collaborator", "workspace", "permission", "round robin", "team member", "multi user", "shared", "staff access"],
+      "category": "account"
+    },
+    {
+      "id": "login-auth",
+      "label": "Login & Auth",
+      "keywords": ["login", "sign in", "sign up", "password", "authentication", "sso", "two factor", "2fa", "reset password", "locked out", "cant login", "access denied", "change email"],
+      "category": "auth"
+    },
+    {
+      "id": "compliance-security",
+      "label": "Compliance & Security",
+      "keywords": ["gdpr", "hipaa", "compliance", "security", "pci", "data protection", "privacy", "dpa", "encryption", "audit trail"],
+      "category": "trust"
+    },
+    {
+      "id": "customization",
+      "label": "Customization",
+      "keywords": ["customize", "customization", "custom field", "font", "style", "color", "css", "theme", "design", "layout", "custom cta", "redirect url"],
+      "category": "customization"
+    },
+    {
+      "id": "mobile-app",
+      "label": "Mobile App",
+      "keywords": ["mobile app", "mobile version", "ios app", "android app", "mobile friendly", "phone app"],
+      "category": "platform"
+    },
+    {
+      "id": "performance",
+      "label": "Performance & Bugs",
+      "keywords": ["slow", "loading", "speed", "performance", "timeout", "lag", "page load", "crashes", "bug", "error", "broken", "not working", "500 error"],
+      "category": "reliability"
+    }
+  ],
+  "stop_words": [
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "shall", "can", "need", "must",
+    "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
+    "into", "through", "during", "before", "after", "above", "below",
+    "between", "out", "off", "over", "under", "again", "further", "then",
+    "once", "here", "there", "when", "where", "why", "how", "all", "each",
+    "every", "both", "few", "more", "most", "other", "some", "such", "no",
+    "nor", "not", "only", "own", "same", "so", "than", "too", "very",
+    "just", "because", "but", "and", "or", "if", "while", "about",
+    "it", "its", "this", "that", "these", "those", "i", "me", "my",
+    "we", "our", "you", "your", "he", "him", "his", "she", "her",
+    "they", "them", "their", "what", "which", "who", "whom",
+    "up", "also", "get", "got", "like", "want", "use", "using",
+    "please", "thanks", "thank", "hi", "hello", "hey",
+    "generated", "draft", "happy", "help", "glad", "able", "hope", "helps",
+    "apologize", "inconvenience", "hesitate", "reach", "reaching",
+    "understand", "frustrating", "completely", "fantastic", "news",
+    "forward", "hearing", "bringing", "checked", "finds", "well",
+    "sorry", "kind", "words", "clarify", "letting", "truly", "appreciate",
+    "identified", "global", "reported", "redesigned", "potential",
+    "collaboration", "sent", "regarding", "issue", "best", "regards",
+    "dear", "sincerely", "warm", "great", "question", "looking"
+  ],
+  "emerging_theme_min_frequency": 3
+}
