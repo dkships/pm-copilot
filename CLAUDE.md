@@ -51,7 +51,7 @@ themes.config.json      # Human-editable theme definitions + keywords (project r
 - `generate_product_plan` reuses `fetchAndAnalyze()` shared with `synthesize_feedback`
 - `kpi_context` is a free-text string — composability hook for other MCP servers
 - Partial failure resilience: `Promise.allSettled` in `fetchAndAnalyze()` — one API down returns data from the other + warnings
-- Request timeouts: 30s via `AbortSignal.timeout` on all external fetch calls
+- Request timeouts: 45s via `AbortSignal.timeout` on all external fetch calls
 - Auth errors: distinct error messages for 401/403 that reference the relevant .env variable
 
 ## Data Privacy: What We Send and What We Don't
@@ -121,7 +121,7 @@ Already configured via `.mcp.json` (project-scoped). The server loads credential
 
 To re-add manually:
 ```bash
-claude mcp add pm-copilot --scope project -- node /Users/davidkelly/dev/pm-copilot/dist/index.js
+claude mcp add pm-copilot --scope project -- node dist/index.js
 ```
 
 Restart Claude Code after changes to pick up the MCP server.
