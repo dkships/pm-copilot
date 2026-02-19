@@ -8,6 +8,14 @@ Product managers drown in fragmented customer data. Support tickets show what's 
 
 The server connects to HelpScout (support tickets) and ProductLift (feature requests), normalizes them into a common format, matches them against configurable themes, and scores each theme using a weighted formula that gives convergent signals a 2x priority boost. The output is structured data that Claude synthesizes into actionable product plans — complete with evidence counts, customer quotes, and severity breakdowns.
 
+## Real results
+
+Tested against live AppSumo Originals data:
+
+> Analyzed 2,370 signals (2,136 support tickets + 234 feature requests) across 3 products in 55 seconds. Identified 16 themes, 15 convergent. Top priority: Booking & Scheduling (134.6 score) — 629 tickets + 77 feature requests, with KPI context showing booking completion rate dropped 8 points and churn spiked 1.1%.
+
+Response sizes by detail level: **summary** ~19KB (default, LLM-optimized), **standard** ~68KB (adds data point titles), **full** ~563KB (all data, for export).
+
 ## Tools
 
 ### `synthesize_feedback`
@@ -20,8 +28,9 @@ Cross-references both data sources and returns theme-matched analysis with prior
 | `top_voted_limit` | number | 50 | Max feature requests by vote count |
 | `mailbox_id` | string | — | HelpScout mailbox filter |
 | `portal_name` | string | — | ProductLift portal filter |
+| `detail_level` | string | `"summary"` | `"summary"` (~19KB), `"standard"` (~68KB), or `"full"` (~563KB) |
 
-Returns themes sorted by priority score, each with reactive/proactive counts, convergence flag, and matched data points.
+Returns themes sorted by priority score, each with reactive/proactive counts, convergence flag, evidence summaries, and representative customer quotes.
 
 ### `generate_product_plan`
 
@@ -36,8 +45,9 @@ Builds a prioritized product plan with evidence summaries and customer quotes. T
 | `kpi_context` | string | — | Business metrics from other MCP servers |
 | `max_priorities` | number | 5 | Number of priorities to return (1-10) |
 | `preview_only` | boolean | false | Audit mode: show what data *would* be sent |
+| `detail_level` | string | `"summary"` | `"summary"` (~7KB), `"standard"` (~21KB), or `"full"` (~584KB) |
 
-Each priority in the response includes: theme name, signal type (reactive/proactive/convergent), priority score, evidence breakdown, and 2-3 representative customer quotes.
+Each priority in the response includes: theme name, signal type (reactive/proactive/convergent), priority score, evidence breakdown, and 2-3 representative customer quotes (agent responses filtered out).
 
 ### `get_feature_requests`
 
@@ -47,7 +57,7 @@ Raw ProductLift data access for browsing feature requests directly.
 
 ### `pm-copilot://methodology`
 
-A structured product planning framework that Claude references when generating plans. Covers signal weighting rules, convergent signal logic, how to balance reactive vs proactive priorities, revenue vs user satisfaction trade-offs, and common PM anti-patterns to avoid.
+David Kelly's actual product planning framework — not a generic PM textbook. Covers the 5% rule, convergent signal logic, reactive vs proactive weighting, when business metrics override the formula, quick wins philosophy, and when to override data with judgment.
 
 The methodology is versioned and served as markdown content via the MCP resource protocol.
 
@@ -130,7 +140,7 @@ HelpScout credentials are required. ProductLift is optional — without it, anal
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "themes": [
     {
       "id": "calendar-sync",
@@ -144,7 +154,7 @@ HelpScout credentials are required. ProductLift is optional — without it, anal
 }
 ```
 
-Ships with 8 seed themes: calendar-sync, dark-mode, api-webhooks, mobile-app, billing-payment, login-auth, performance, notifications. Add your own by appending to the `themes` array.
+Ships with 16 data-driven themes across 9 categories (core, billing, communication, customization, integration, product, account, auth, trust, platform, reliability). Add your own by appending to the `themes` array.
 
 Data points that don't match any known theme are analyzed for emerging patterns using bigram/trigram frequency detection.
 
@@ -202,7 +212,7 @@ themes.config.json      # Human-editable theme definitions + keywords
 - **Vote momentum** (0.30): Proactive signals only — 80% votes + 20% comments
 - **Convergence boost** (2x): Applied when a theme has both reactive and proactive signals
 
-Error handling uses `Promise.allSettled` — if one API is down, analysis continues with data from the other source. All HTTP requests have 30-second timeouts. Auth failures produce specific error messages referencing the relevant `.env` variable.
+Error handling uses `Promise.allSettled` — if one API is down, analysis continues with data from the other source. All HTTP requests have 45-second timeouts. Auth failures produce specific error messages referencing the relevant `.env` variable. A 5-minute response cache ensures back-to-back tool calls (e.g., `synthesize_feedback` then `generate_product_plan`) share a single fetch.
 
 ## Built with
 
