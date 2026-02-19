@@ -174,6 +174,43 @@ async function fetchProductLift(
   return results.flat();
 }
 
+// ── Response cache ──
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface CacheEntry {
+  data: FetchedData;
+  timestamp: number;
+}
+
+const fetchCache = new Map<string, CacheEntry>();
+
+function cacheKey(params: FetchParams): string {
+  return `${params.timeframe_days}|${params.mailbox_id ?? ""}|${params.portal_name ?? ""}|${params.top_voted_limit}`;
+}
+
+async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
+  const key = cacheKey(params);
+  const cached = fetchCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    const ageSeconds = ((Date.now() - cached.timestamp) / 1000).toFixed(0);
+    console.error(`[pm-copilot] Cache hit (key=${key}, age=${ageSeconds}s)`);
+    return cached.data;
+  }
+
+  console.error(`[pm-copilot] Cache miss (key=${key}), fetching fresh data...`);
+  const data = await fetchAndAnalyze(params);
+
+  fetchCache.set(key, { data, timestamp: Date.now() });
+
+  // Evict expired entries
+  for (const [k, entry] of fetchCache) {
+    if (Date.now() - entry.timestamp >= CACHE_TTL_MS) fetchCache.delete(k);
+  }
+
+  return data;
+}
+
 async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
   const piiCategories = new Set<string>();
   const prevLog = piiCategoriesLog;
@@ -287,7 +324,7 @@ server.registerTool("synthesize_feedback", {
   },
 }, async ({ timeframe_days, top_voted_limit, mailbox_id, portal_name, detail_level }) => {
   try {
-    const data = await fetchAndAnalyze({
+    const data = await cachedFetchAndAnalyze({
       timeframe_days,
       top_voted_limit,
       mailbox_id,
@@ -673,7 +710,7 @@ server.registerTool("generate_product_plan", {
     }
 
     // Full execution: fetch, analyze, build plan
-    const data = await fetchAndAnalyze({
+    const data = await cachedFetchAndAnalyze({
       timeframe_days,
       top_voted_limit,
       mailbox_id,

@@ -6,97 +6,106 @@
  * reference it when using generate_product_plan.
  */
 
-export const METHODOLOGY_VERSION = "1.0";
+export const METHODOLOGY_VERSION = "2.0";
 
-export const METHODOLOGY_CONTENT = `# PM Copilot — Product Planning Methodology v${METHODOLOGY_VERSION}
+export const METHODOLOGY_CONTENT = `# David Kelly's Product Planning Framework v${METHODOLOGY_VERSION}
 
-## Signal Types
+This is how I decide what to build across AppSumo Originals products (TidyCal, BreezeDoc, FormRobin). I've developed this over 7+ years of launching 9 products to 1M+ users. This is what PM Copilot references when generating product plans — not a generic PM textbook.
 
-### Reactive Signals (HelpScout support tickets)
-- Customers hitting real problems right now
-- High severity = they took time to write in
-- Thread count is a severity proxy: more back-and-forth means harder to resolve
-- Tags like "bug", "urgent", "escalation" amplify severity
-- **Bias warning**: reactive signals skew toward vocal users and broken things, not growth opportunities
+## The 5% Rule
 
-### Proactive Signals (ProductLift feature requests)
-- Customers telling you what they WANT, not just what's broken
-- Vote counts measure breadth of demand
-- Comments measure depth of conviction
-- **Bias warning**: proactive signals skew toward power users who find your roadmap page
+Every month, we get 200+ pieces of feedback from users, prospects, and customers. We have a 10-person team. We complete only about 5% of what customers ask for each month. That means the other 95% gets deliberately ignored — not because it's bad feedback, but because focus is what got us to $13M+ in revenue on a bootstrapped budget.
 
-## Signal Weighting Rules
+The most important thing is to keep the most important thing the most important thing. This framework exists to identify which 5% matters most.
 
-1. **Neither source alone is sufficient.** A theme only in support tickets might be a temporary bug. A theme only in feature requests might be a niche want.
-2. **Convergent signals are 2x priority.** When the same theme appears in BOTH support tickets AND feature requests, it's validated from two independent customer behaviors. This is the strongest signal.
-3. **Frequency is necessary but not sufficient.** 50 people asking for dark mode matters, but 5 people unable to log in is more urgent.
-4. **Recency matters.** A spike in the last 7 days outweighs a steady trickle over 90 days — it may indicate a regression or a market shift.
+## Cream Rises to the Top: Convergent Signals
 
-## Scoring Formula
+The single most important signal is when the same theme shows up independently in two places: support tickets (people hitting real problems) AND feature requests (people asking for something new). I call these convergent signals, and they always win.
+
+Why? They've been validated by two completely different customer behaviors. A support ticket means someone is frustrated enough to write in. A feature request means someone cares enough to find our roadmap page and vote. When both happen for the same theme, that's not noise — that's the product telling you something.
+
+Convergent themes get a 2x priority boost. In practice, convergent themes have been the ones that actually move retention numbers when we fix them.
+
+## Two Kinds of Signals, Weighted Differently
+
+### Reactive signals (support tickets)
+People hitting real pain right now. I weight these heavier than feature requests because broken stuff drives churn. You can survive not having a feature; you can't survive your booking page throwing errors.
+
+Severity indicators I track:
+- Thread count: 5+ back-and-forth messages means the issue is complex or genuinely confusing. Either way, needs fixing.
+- Recency: A spike in the last 7 days matters way more than a steady trickle over 90 days. Spikes mean something broke. I use a 7-day half-life decay so recent pain dominates.
+- Tags: "escalation", "critical", "urgent", "bug" — these are the support team telling me normal workflow couldn't handle it.
+
+### Proactive signals (feature requests + votes)
+People telling you what they want. Vote counts measure breadth (how many care?) and comments measure depth (how much do they care?). I weight votes at 80% and comments at 20%.
+
+Critical distinction: High votes with zero support tickets means it's a WANT, not a NEED. Dark mode with 50 votes but zero display tickets? Nice-to-have territory.
+
+## The Scoring Formula
 
 \`\`\`
-priority_score = (frequency × 0.35 + severity × 0.35 + vote_momentum × 0.30) × convergence_boost
+priority = (frequency × 0.35 + severity × 0.35 + vote_momentum × 0.30)
+           × convergence_boost
 \`\`\`
 
-- **Frequency (0.35)**: Count of data points, normalized to max across all themes
-- **Severity (0.35)**: Reactive signals only — thread count, recency (exponential decay), tag boost
-- **Vote Momentum (0.30)**: Proactive signals only — 80% votes + 20% comments, normalized
-- **Convergence Boost (2×)**: Applied when theme has BOTH reactive AND proactive signals
+- Frequency (35%): How many people are affected. Table stakes.
+- Severity (35%): How bad it is. 5 people who can't log in matters more than 50 who want a font change.
+- Vote momentum (30%): Slightly lower because votes skew toward power users who find roadmap pages.
+- Convergence (2x): When a theme appears in both sources, the entire score doubles. Strongest lever in the system.
 
-## Balancing Reactive vs Proactive
+## When Business Metrics Change Everything
 
-### When to prioritize reactive (fix what's broken):
-- Severity score > 70 for any theme
-- Tags include "escalation" or "critical"
-- Thread counts averaging > 5 (long painful conversations)
-- Revenue-impacting issues (billing, auth, performance)
+The formula gives customer signal priorities. When I have Metabase, GA, or revenue data, I adjust:
 
-### When to prioritize proactive (build what's wanted):
-- Vote momentum score > 70 with low severity
-- Feature requests align with strategic product direction
-- Competitive pressure (customers mentioning competitor features)
-- Retention-focused themes (integration requests from power users)
+Churn data overrides the formula. If TidyCal churn spikes from 3% to 4%, I immediately look at reactive signals. Booking completion dropping? That's the priority regardless of score.
 
-### The 80/20 Rule
-- Typically 80% of product impact comes from addressing the top 3 themes
-- Don't spread thin across 10 initiatives — go deep on 3-5
-- One convergent theme is worth more than three single-source themes
+Revenue per theme matters. Billing issues in a $2M ARR product get more attention than the same score in a $200K product. I apply this as judgment, not formula.
 
-## When KPI Context Is Available
+Usage validates demand. High votes but low usage on the related existing feature? I discount it. People vote for what sounds good, not necessarily what they'll use.
 
-When business metrics from external sources (Metabase, GA, etc.) are provided:
+Growth data sets the posture. Organic traffic up 22% MoM? Lean into proactive features that attract new users. Growth flat? Focus on reactive fixes to stop the bleeding.
 
-1. **Churn data elevates retention themes**: If churn is rising, weight reactive signals higher — fix what's pushing people away
-2. **Traffic/growth data elevates acquisition themes**: If growth is strong, weight proactive signals higher — build what attracts new users
-3. **Revenue per segment data focuses priorities**: If enterprise customers drive 80% of revenue, weight their signals proportionally
-4. **Usage analytics validate demand**: If a feature request has high votes but low usage of related features, discount it
-5. **Never let metrics override convergent signals**: A convergent theme + supporting metrics = highest confidence priority
+## Quick Wins Punch Above Their Weight
 
-## Revenue vs User Satisfaction
+A small fix that reduces ticket volume by 20% is often more valuable than a big feature that takes 3 months. Why:
+1. Frees the support team immediately
+2. Improves the experience for hundreds of users this week
+3. Gives the dev team a win while bigger initiatives are planned
 
-This is not a binary choice. Use this framework:
+With our team (one designer, two backend devs), I ship 5-15 focused projects per product per month rather than chase one ambitious feature for a quarter. The scope increases to the length of time given — monthly cadence keeps us honest.
 
-| Situation | Lean toward |
-|-----------|-------------|
-| Churn rising + billing/auth themes hot | Revenue protection (reactive) |
-| Growth strong + integration requests | User satisfaction (proactive) |
-| Convergent theme in any category | Address it regardless — both sides agree |
-| Conflicting signals | Default to reactive — you can't grow if existing users are leaving |
+We target 80%+ on-time completion, not 100%. That wiggle room handles surprise bugs, projects with lower-than-expected ROI we cancel mid-month, and the occasional project that deserves extra polish.
 
-## Output Format for Product Plans
+## When I Override the Data
 
-For each recommended priority:
-1. **Theme name** and category
-2. **Signal type**: reactive, proactive, or convergent (strongest)
-3. **Evidence summary**: X support tickets, Y feature requests, Z total votes
-4. **Customer quotes**: 2-3 representative quotes showing the pain/desire (PII-scrubbed)
-5. **Recommended action**: Specific, actionable next step (not vague "improve X")
-6. **KPI connection** (if metrics provided): How this ties to business outcomes
+The formula is a starting point, not the answer. I override when:
 
-## Anti-Patterns to Avoid
+Customer segment knowledge: Our AppSumo lifetime deal buyers behave differently than monthly subscribers. LTD users care about licensing, account access, "will this product survive?" Monthly users care about the product working day-to-day. The data doesn't segment this way, so I apply judgment.
 
-- **Recency bias**: Don't over-index on this week's loudest ticket
-- **Squeaky wheel**: One customer filing 10 tickets ≠ 10 customers with the problem
-- **Feature factory**: Don't just build the most-voted feature — check if it aligns with product strategy
-- **Metric theater**: Don't cite a KPI just because it exists — only reference metrics that genuinely affect prioritization
+Signal before spend: Sometimes I know we need to build something not because the data says so, but because it's how we win a market. But I always test cheap first — wait for signal before committing real resources. I've killed products with $1M+ invested when the signal wasn't there. Sunk cost can't drive prioritization.
+
+Customer proximity: I still call 2-4 TidyCal customers per month, even at 350K+ users. Phone calls surface nuance that tickets and votes miss — tone, workarounds people have built, adjacent problems they don't think to report. When my calls contradict the data, I dig deeper before trusting either source.
+
+Competitive pressure: If a competitor just shipped something our customers are asking about, urgency changes regardless of the formula.
+
+Team energy: If the dev team is burned out on bug fixes, I'll slot in a feature build. Sustained output matters more than perfect prioritization.
+
+## What This Framework Does NOT Do
+
+Honest about the limits:
+- It tells you WHAT to prioritize, not HOW to build it
+- It can't detect problems customers don't report (silent churn)
+- It skews toward English-speaking, vocal customers
+- Revenue impact is still my judgment, not calculated
+- It won't catch emerging categories until enough signals accumulate
+- The weights (0.35/0.35/0.30) are calibrated for our products — other products might need different ratios
+- It processes the signal, but the final call is still mine
+
+## The Monthly Cadence
+
+Goal → KPIs → Levers. Keep it simple: one clear goal, a few KPIs that indicate progress, and controllable levers the team can pull.
+
+Every month: pull the signals, run the analysis, overlay business metrics, apply judgment, ship 5-15 things per product. Review what moved the needle. Adjust themes if the world changed.
+
+The tool does the signal processing. The judgment is still mine.
 `;

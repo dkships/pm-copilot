@@ -7,7 +7,7 @@ const TOKEN_URL = `${BASE_URL}/oauth2/token`;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 170;
 const PAGE_DELAY_MS = 250;
-const REQUEST_TIMEOUT_MS = 30_000;
+const REQUEST_TIMEOUT_MS = 45_000;
 
 interface TokenState {
   accessToken: string;
