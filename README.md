@@ -109,25 +109,40 @@ Raw ProductLift data access for browsing feature requests directly.
 | `portal_name` | string | — | Filter to a specific portal |
 | `include_comments` | boolean | true | Include comments on each request |
 
-## Composability
+## Composability in Action
 
-PM Copilot is designed to work alongside other MCP servers. The `kpi_context` parameter on `generate_product_plan` is the integration point.
+PM Copilot is designed to work alongside other MCP servers. Here's a real example using live data from 3 AppSumo Originals products.
 
-When Claude has multiple MCP servers connected — say Metabase for database queries and Google Analytics for traffic data — a PM can make a single request:
+**Step 1: The PM asks a single question**
 
-> "Pull our churn data from Metabase, our traffic trends from GA, and then use pm-copilot to create a product plan using all of that context."
+> Pull our churn and booking completion data, then use pm-copilot to create a product plan using all of that context.
 
-Claude calls the other servers first, then passes their output as `kpi_context`:
+**Step 2: pm-copilot analyzes 10,424 signals and returns the top priorities**
 
+| # | Theme | Score | Tickets | Feature Requests | Signal |
+|---|-------|------:|--------:|-----------------:|--------|
+| 1 | Billing & Payment | 91.1 | 2,336 | 20 | Convergent |
+| 2 | Booking & Scheduling | 87.1 | 682 | 74 | Convergent |
+| 3 | Account & Licensing | 69.7 | 1,955 | 8 | Convergent |
+| 4 | Team & Collaboration | 64.4 | 1,875 | 19 | Convergent |
+| 5 | Whitelabel & Branding | 50.2 | 92 | 30 | Convergent |
+
+**Step 3: Business metrics from dashboards arrive as `kpi_context`**
+
+```text
+TidyCal: booking completion rate dropped from 74% to 66% over last
+30 days. Monthly churn increased from 3.1% to 4.2%. Organic traffic
+up 22% MoM. BreezeDoc: document completion rate steady at 81%.
+Churn flat at 2.8%.
 ```
-generate_product_plan({
-  timeframe_days: 30,
-  kpi_context: "TidyCal churn: 3.2% → 4.1% MoM. Booking completion: 78% → 70%.
-                Organic traffic: +22% MoM. Top landing pages: /pricing, /features."
-})
-```
 
-The methodology resource tells Claude how to weight business metrics against customer signals: rising churn elevates reactive themes, strong growth elevates proactive ones.
+**Step 4: Claude synthesizes both — and overrides the formula**
+
+The scores say Billing & Payment is #1. But the methodology says *churn data overrides the formula*. With TidyCal's booking completion dropping 8 points and churn spiking 35%, **Booking & Scheduling becomes the real #1** — it's the core product breaking.
+
+BreezeDoc deprioritized (stable metrics, no fire). TidyCal's 22% organic traffic growth elevates Whitelabel & Branding as a growth play.
+
+> The server provides the signal ranking. KPI context provides the override judgment. Claude synthesizes both.
 
 ## Methodology
 
