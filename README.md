@@ -11,6 +11,8 @@ An MCP server that triangulates customer support tickets and feature requests to
 
 > **Real results:** Analyzed 2,370 signals (2,136 support tickets + 234 feature requests) across 3 products in 55 seconds. Identified 16 themes, 15 convergent. Top priority: Booking & Scheduling (score: 134.6) — 629 tickets + 77 feature requests pointing at the same problem.
 
+**Read the full story:** [I built an MCP server that changed how I prioritize products](https://dmkthinks.org/blog/i-built-an-mcp-server-that-changed-how-i-prioritize-products/) — why I built this, how convergent signals work in practice, and what I learned building with Claude Code.
+
 ---
 
 ## What Makes This Different
