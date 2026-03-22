@@ -134,6 +134,14 @@ Restart Claude Code after changes to pick up the MCP server.
 - **Rate limiting**: HelpScout rate limiter backs off and retries once on 429. Token cache cleared on auth failures.
 - **Tool-level**: Each tool handler wraps in try/catch and returns `isError: true` with the message
 
+## Accuracy Guardrails
+
+- If uncertain about an API behavior, SDK method, or MCP protocol detail, say "I don't know" rather than guessing
+- Read the relevant source file before making claims about its implementation
+- Verify that functions, types, and config keys exist in the codebase before referencing them
+- Do not assume HelpScout or ProductLift API capabilities — check the client modules (`helpscout.ts`, `productlift.ts`)
+- Cite specific file paths and line numbers when making recommendations
+
 ## Conventions
 
 - Use `registerTool` (not deprecated `.tool()`) and `registerResource` for MCP registration
