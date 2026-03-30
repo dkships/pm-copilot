@@ -38,6 +38,10 @@ graph TD
 
 Claude orchestrates multiple MCP servers. PM Copilot handles qualitative customer signals. Other servers provide quantitative business metrics. The `kpi_context` parameter is the integration point — no point-to-point integrations required.
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/dkships-pm-copilot).
+
 ## Quick Start
 
 ```bash
