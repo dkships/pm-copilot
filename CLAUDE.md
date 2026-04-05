@@ -141,6 +141,8 @@ Restart Claude Code after changes to pick up the MCP server.
 - Verify that functions, types, and config keys exist in the codebase before referencing them
 - Do not assume HelpScout or ProductLift API capabilities — check the client modules (`helpscout.ts`, `productlift.ts`)
 - Cite specific file paths and line numbers when making recommendations
+- When analyzing tool output, API responses, or source code, extract direct quotes first, then base conclusions on those — not on memory or paraphrase
+- After generating claims or recommendations, self-verify each against the source material; retract any claim that lacks a supporting code reference or data point
 
 ## Conventions
 
