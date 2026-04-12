@@ -23,10 +23,7 @@ MCP server connecting Claude to customer signal data (HelpScout support tickets 
 - Theme config loaded at runtime via `fs.readFileSync` — edits don't require rebuild
 
 ## Hallucination Prevention
-- When analyzing code or API responses, extract verbatim quotes before drawing conclusions — do not paraphrase from memory
-- After generating claims, verify each against source material and remove any that lack supporting evidence
-- When source documents are provided, restrict analysis to those sources — explicitly flag any use of general training knowledge
-- For complex reasoning, show intermediate steps before final conclusions
+See `~/.agents/AGENTS.md`. For this MCP server: sources = code and HelpScout/ProductLift API responses.
 
 ## Definition Of Done
 - Tool responses include `pii_scrubbing_applied: true` and `pii_categories_redacted`
