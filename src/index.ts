@@ -44,7 +44,7 @@ const productliftClients = portalConfigs.map((c) => new ProductLiftClient(c));
 
 const server = new McpServer({
   name: "pm-copilot",
-  version: "0.2.0",
+  version: "1.0.0",
 });
 
 // ── Resources ──
