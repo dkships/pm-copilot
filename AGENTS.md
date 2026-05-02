@@ -21,7 +21,7 @@ MCP server connecting Claude to customer signal data (HelpScout support tickets 
 - Handle errors with `isError: true` responses
 - No `any` types — use `as T` casts for API responses
 - Theme config loaded at runtime via `fs.readFileSync` — edits don't require rebuild
-- The global Codex config has a disabled `pm-copilot` MCP template pointing at `dist/index.js`; run `npm run build` after source changes before testing through Codex MCP.
+- Codex has an enabled `pm-copilot` MCP server pointing at `dist/index.js`; run `npm run build` after source changes before testing through Codex MCP.
 - Use `env_vars` or inherited shell env for credentials; never copy token values into config.
 
 ## Hallucination Prevention
@@ -34,4 +34,4 @@ See `~/.agents/AGENTS.md`. For this MCP server: sources = code and HelpScout/Pro
 
 ## Maintenance
 - Owner: David Kelly
-- Last Updated: 2026-04-26
+- Last Updated: 2026-05-02
