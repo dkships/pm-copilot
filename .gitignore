@@ -3,6 +3,7 @@ dist/
 .env
 *.tsbuildinfo
 .DS_Store
+.claude/settings.local.json
 claude-code-notes.md
 moonshot-ideas.md
 blog-draft.md
