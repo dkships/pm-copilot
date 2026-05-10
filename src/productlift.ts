@@ -3,7 +3,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 
 export interface PortalConfig {
   name: string;
-  baseUrl: string; // e.g. https://roadmap.tidycal.com
+  baseUrl: string; // e.g. https://roadmap.example.com
   apiKey: string;
 }
 

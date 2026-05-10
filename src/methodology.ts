@@ -10,11 +10,11 @@ export const METHODOLOGY_VERSION = "2.0";
 
 export const METHODOLOGY_CONTENT = `# David Kelly's Product Planning Framework v${METHODOLOGY_VERSION}
 
-This is how I decide what to build across AppSumo Originals products (TidyCal, BreezeDoc, FormRobin). I've developed this over 7+ years of launching 9 products to 1M+ users. This is what PM Copilot references when generating product plans — not a generic PM textbook.
+This is how I decide what to build across the products I work on. I've developed this over 7+ years of launching 9 products to 1M+ users. This is what PM Copilot references when generating product plans — not a generic PM textbook.
 
 ## The 5% Rule
 
-Every month, we get 200+ pieces of feedback from users, prospects, and customers. We have a 10-person team. We complete only about 5% of what customers ask for each month. That means the other 95% gets deliberately ignored — not because it's bad feedback, but because focus is what got us to $13M+ in revenue on a bootstrapped budget.
+Every month, we get 200+ pieces of feedback from users, prospects, and customers. We have a 10-person team. We complete only about 5% of what customers ask for each month. That means the other 95% gets deliberately ignored — not because it's bad feedback, but because focus is what compounds.
 
 The most important thing is to keep the most important thing the most important thing. This framework exists to identify which 5% matters most.
 
@@ -57,7 +57,7 @@ priority = (frequency × 0.35 + severity × 0.35 + vote_momentum × 0.30)
 
 The formula gives customer signal priorities. When I have Metabase, GA, or revenue data, I adjust:
 
-Churn data overrides the formula. If TidyCal churn spikes from 3% to 4%, I immediately look at reactive signals. Booking completion dropping? That's the priority regardless of score.
+Churn data overrides the formula. If churn spikes a percentage point on one of the products, I immediately look at reactive signals. A core conversion metric dropping? That's the priority regardless of score.
 
 Revenue per theme matters. Billing issues in a $2M ARR product get more attention than the same score in a $200K product. I apply this as judgment, not formula.
 
@@ -80,11 +80,11 @@ We target 80%+ on-time completion, not 100%. That wiggle room handles surprise b
 
 The formula is a starting point, not the answer. I override when:
 
-Customer segment knowledge: Our AppSumo lifetime deal buyers behave differently than monthly subscribers. LTD users care about licensing, account access, "will this product survive?" Monthly users care about the product working day-to-day. The data doesn't segment this way, so I apply judgment.
+Customer segment knowledge: Lifetime deal buyers behave differently than monthly subscribers. LTD users care about licensing, account access, "will this product survive?" Monthly users care about the product working day-to-day. The data doesn't segment this way, so I apply judgment.
 
 Signal before spend: Sometimes I know we need to build something not because the data says so, but because it's how we win a market. But I always test cheap first — wait for signal before committing real resources. I've killed products with $1M+ invested when the signal wasn't there. Sunk cost can't drive prioritization.
 
-Customer proximity: I still call 2-4 TidyCal customers per month, even at 350K+ users. Phone calls surface nuance that tickets and votes miss — tone, workarounds people have built, adjacent problems they don't think to report. When my calls contradict the data, I dig deeper before trusting either source.
+Customer proximity: I still call 2-4 customers per month, even at scale. Phone calls surface nuance that tickets and votes miss — tone, workarounds people have built, adjacent problems they don't think to report. When my calls contradict the data, I dig deeper before trusting either source.
 
 Competitive pressure: If a competitor just shipped something our customers are asking about, urgency changes regardless of the formula.
 

@@ -113,13 +113,13 @@ Raw ProductLift data access for browsing feature requests directly.
 
 ## Composability in Action
 
-PM Copilot is designed to work alongside other MCP servers. Here's a real example using live data from 3 AppSumo Originals products.
+PM Copilot is designed to work alongside other MCP servers. Here's a worked example showing how a `kpi_context` override changes the ranking. Numbers are illustrative.
 
 **Step 1: The PM asks a single question**
 
 > Pull our churn and booking completion data, then use pm-copilot to create a product plan using all of that context.
 
-**Step 2: pm-copilot analyzes 10,424 signals and returns the top priorities**
+**Step 2: pm-copilot analyzes the signals and returns the top priorities**
 
 | # | Theme | Score | Tickets | Feature Requests | Signal |
 |---|-------|------:|--------:|-----------------:|--------|
@@ -132,23 +132,23 @@ PM Copilot is designed to work alongside other MCP servers. Here's a real exampl
 **Step 3: Business metrics from dashboards arrive as `kpi_context`**
 
 ```text
-TidyCal: booking completion rate dropped from 74% to 66% over last
+Product A: booking completion rate dropped from 74% to 66% over last
 30 days. Monthly churn increased from 3.1% to 4.2%. Organic traffic
-up 22% MoM. BreezeDoc: document completion rate steady at 81%.
+up 22% MoM. Product B: document completion rate steady at 81%.
 Churn flat at 2.8%.
 ```
 
-**Step 4: Claude synthesizes both — and overrides the formula**
+**Step 4: Claude synthesizes both, and overrides the formula**
 
-The scores say Billing & Payment is #1. But the methodology says *churn data overrides the formula*. With TidyCal's booking completion dropping 8 points and churn spiking 35%, **Booking & Scheduling becomes the real #1** — it's the core product breaking.
+The scores say Billing & Payment is #1. But the methodology says *churn data overrides the formula*. With Product A's booking completion dropping 8 points and churn spiking 35%, **Booking & Scheduling becomes the real #1** — it's the core product breaking.
 
-BreezeDoc deprioritized (stable metrics, no fire). TidyCal's 22% organic traffic growth elevates Whitelabel & Branding as a growth play.
+Product B deprioritized (stable metrics, no fire). Product A's 22% organic traffic growth elevates Whitelabel & Branding as a growth play.
 
 > The server provides the signal ranking. KPI context provides the override judgment. Claude synthesizes both.
 
 ## Methodology
 
-PM Copilot exposes a `pm-copilot://methodology` resource — David Kelly's actual product planning framework built over 7 years of launching 9 products to 1M+ users at AppSumo Originals.
+PM Copilot exposes a `pm-copilot://methodology` resource — David Kelly's product planning framework, built over 7 years of launching 9 products to 1M+ users.
 
 Key principles:
 - **The 5% rule** — You complete ~5% of what customers ask for each month. The framework identifies which 5% matters most.

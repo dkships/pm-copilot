@@ -27,9 +27,13 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - `vitest` dev dependency and tests for `src/pii-scrubber.ts` covering SSN, credit card (Luhn pass/fail), email, and phone redaction.
 - `npm run test` and `npm run audit:ci` scripts; `prepublishOnly` gate.
 
+### Changed
+
+- Genericized client-identifying content. The README composability example now uses `Product A` / `Product B` and is framed as illustrative rather than implying live customer data. `src/methodology.ts` no longer names specific products or quotes client-specific churn/scale figures. `CLAUDE.md` and `src/productlift.ts` use `roadmap.example.com` in example URLs. The `AppSumo-specific` block in the support-agent response filter (`src/index.ts`) was dropped; the remaining patterns are generic.
+
 ### Removed
 
-- `AGENTS.md` from the public repo. Its content was geared at the maintainer's local toolchain and added confusion for outside readers.
+- The original `AGENTS.md` framing aimed at a single maintainer's toolchain. Replaced with vendor-neutral guidance for any coding agent working in the repo.
 
 ## [1.0.0] — 2026-02-19
 

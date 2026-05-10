@@ -435,8 +435,7 @@ const AGENT_RESPONSE_PATTERNS: RegExp[] = [
   /ai-generated draft/i,
   /your request .* could(n't| not) be created/i,
   /powered by/i,
-  // AppSumo-specific agent templates
-  /hey sumo-ling/i,
+  // Generic support-agent phrasing
   /we're aiming to .* get back to you/i,
   /before i proceed/i,
 ];

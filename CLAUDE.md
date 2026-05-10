@@ -30,7 +30,7 @@ Every tool response includes `pii_scrubbing_applied: true` and `pii_categories_r
 | `HELPSCOUT_APP_ID` | Yes | OAuth app ID from https://secure.helpscout.net/apps/custom/ |
 | `HELPSCOUT_APP_SECRET` | Yes | OAuth app secret |
 | `PRODUCTLIFT_PORTALS` | No* | Multi-portal: `name\|url\|key,name2\|url2\|key2` |
-| `PRODUCTLIFT_PORTAL_URL` | No* | Single portal URL (e.g., `https://roadmap.tidycal.com`) |
+| `PRODUCTLIFT_PORTAL_URL` | No* | Single portal URL (e.g., `https://roadmap.example.com`) |
 | `PRODUCTLIFT_API_KEY` | No* | Single portal Bearer token |
 | `PRODUCTLIFT_PORTAL_NAME` | No | Portal display name (default: "default") |
 
