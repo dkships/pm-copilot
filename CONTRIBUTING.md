@@ -18,7 +18,7 @@ npm run build
 npm test
 ```
 
-Node 18 or higher is required.
+Node 20 or higher is required.
 
 ## Workflow
 
