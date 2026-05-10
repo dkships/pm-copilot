@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a defect in pm-copilot
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting: please redact any customer data, ticket content, or credentials from the inputs below.
+
+        Security issues: do not file here. See [SECURITY.md](../blob/main/SECURITY.md) for the private disclosure path.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the bug. What did you run, what did you expect, what actually happened?
+      placeholder: |
+        I called `synthesize_feedback` with timeframe_days=30 and got ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce
+      description: Minimal steps to reproduce the issue.
+      placeholder: |
+        1. Configure ProductLift with portal X
+        2. Run tool Y with input Z
+        3. Observe error
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: pm-copilot version
+      description: Output of `npm ls @dkships/pm-copilot` or the commit SHA.
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      description: Output of `node --version`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Redact any credentials, customer data, or API tokens before pasting.
+      render: shell
+    validations:
+      required: false

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/dkships/pm-copilot/security/advisories/new
+    about: Report a vulnerability privately. Do not open a public issue.
+  - name: Question or discussion
+    url: https://github.com/dkships/pm-copilot/discussions
+    about: For open-ended questions or design discussion.
