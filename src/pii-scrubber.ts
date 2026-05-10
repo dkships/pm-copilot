@@ -32,13 +32,13 @@ const PII_PATTERNS: PiiPattern[] = [
     pattern: /\b\d{3}[-\s]\d{2}[-\s]\d{4}\b/g,
     replacement: "[SSN REDACTED]",
   },
-  // Credit cards: 13-19 digit sequences with optional separators
-  // Covers Visa, MC, Amex, Discover
+  // Credit cards: 13-19 digit sequences with optional dash/space separators.
+  // Matches Visa/MC (4-4-4-4), Amex (4-6-5), Discover, and unseparated forms.
+  // Luhn check below filters false positives.
   {
     name: "credit_card",
-    pattern: /\b(?:\d{4}[-\s]?){2,4}\d{1,4}\b/g,
+    pattern: /(?<!\d)(?:\d[-\s]?){12,18}\d(?!\d)/g,
     replacement: "[CC REDACTED]",
-    // Post-filter: only redact if the digit-only version is 13-19 digits
   },
   // Email addresses
   {

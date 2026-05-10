@@ -8,6 +8,8 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_WINDOW = 170;
 const PAGE_DELAY_MS = 250;
 const REQUEST_TIMEOUT_MS = 45_000;
+const MAX_429_RETRIES = 3;
+const RETRY_BACKOFF_MS = 15_000;
 
 interface TokenState {
   accessToken: string;
@@ -125,7 +127,8 @@ export class HelpScoutClient {
 
   private async apiGet<T>(
     path: string,
-    params?: Record<string, string>
+    params?: Record<string, string>,
+    retryCount = 0
   ): Promise<T> {
     await this.rateLimit();
     const token = await this.authenticate();
@@ -141,9 +144,18 @@ export class HelpScoutClient {
     });
 
     if (res.status === 429) {
-      // Rate limited — back off and retry once
-      await new Promise((resolve) => setTimeout(resolve, 15_000));
-      return this.apiGet(path, params);
+      if (retryCount >= MAX_429_RETRIES) {
+        throw new Error(
+          `HelpScout rate limit exceeded on ${path} after ${MAX_429_RETRIES} retries`
+        );
+      }
+      // Honour Retry-After if present, else exponential backoff.
+      const retryAfterHeader = res.headers.get("retry-after");
+      const retryAfterMs = retryAfterHeader
+        ? Number(retryAfterHeader) * 1000
+        : RETRY_BACKOFF_MS * Math.pow(2, retryCount);
+      await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+      return this.apiGet(path, params, retryCount + 1);
     }
 
     if (res.status === 401 || res.status === 403) {

@@ -4,10 +4,28 @@
   "description": "MCP server that triangulates customer support tickets and feature requests to help PMs decide what to build next",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "pm-copilot": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "themes.config.json",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/index.js",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit:ci": "npm audit --omit=dev --audit-level=high",
+    "prepublishOnly": "npm run build && npm test && npm run audit:ci"
   },
   "keywords": [
     "mcp",
@@ -23,7 +41,13 @@
     "type": "git",
     "url": "git+https://github.com/dkships/pm-copilot.git"
   },
-  "homepage": "https://github.com/dkships/pm-copilot",
+  "bugs": {
+    "url": "https://github.com/dkships/pm-copilot/issues"
+  },
+  "homepage": "https://github.com/dkships/pm-copilot#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^16.4.0",
@@ -31,6 +55,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
   }
 }
