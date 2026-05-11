@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-05-10
+
+### Fixed
+
+- `npm pack` no longer includes test files. `tsconfig.json` now excludes `src/**/*.test.ts` from compilation, dropping the tarball from 34 to 30 files. Vitest still reads tests from source.
+
+### Changed
+
+- README badges aligned with installed versions: TypeScript 6.0 and MCP SDK 1.29.0.
+
 ## [1.1.0] — 2026-05-10
 
 ### Security
