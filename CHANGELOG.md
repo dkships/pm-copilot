@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-05-10
+
 ### Security
 
 - Patched 4 transitive dependency advisories via `npm audit fix`:
