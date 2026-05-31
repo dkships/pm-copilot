@@ -52,6 +52,11 @@ export interface Conversation extends ConversationSummary {
   threads: Thread[];
 }
 
+export interface Mailbox {
+  id: number;
+  name: string;
+}
+
 export interface FetchOptions {
   timeframeDays: number;
   mailboxId?: string;
@@ -63,6 +68,7 @@ export class HelpScoutClient {
   private appSecret: string;
   private token: TokenState | null = null;
   private requestTimestamps: number[] = [];
+  private mailboxesCache: Mailbox[] | null = null;
 
   constructor(appId: string, appSecret: string) {
     this.appId = appId;
@@ -204,6 +210,39 @@ export class HelpScoutClient {
       conversations: data._embedded?.conversations ?? [],
       page: data.page,
     };
+  }
+
+  /**
+   * List all mailboxes (id + name) so callers can resolve a human-readable
+   * mailbox name to its numeric ID. Cached for the process lifetime —
+   * mailboxes rarely change. Paginated (HelpScout returns 50 per page).
+   */
+  async fetchMailboxes(): Promise<Mailbox[]> {
+    if (this.mailboxesCache) return this.mailboxesCache;
+
+    const fetchPage = (page: number) =>
+      this.apiGet<{
+        _embedded?: { mailboxes: Array<{ id: number; name: string }> };
+        page: PageInfo;
+      }>("/mailboxes", { page: String(page) });
+
+    const mailboxes: Mailbox[] = [];
+    const first = await fetchPage(1);
+    for (const m of first._embedded?.mailboxes ?? []) {
+      mailboxes.push({ id: m.id, name: m.name });
+    }
+
+    const totalPages = first.page?.totalPages ?? 1;
+    for (let page = 2; page <= totalPages; page++) {
+      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+      const next = await fetchPage(page);
+      for (const m of next._embedded?.mailboxes ?? []) {
+        mailboxes.push({ id: m.id, name: m.name });
+      }
+    }
+
+    this.mailboxesCache = mailboxes;
+    return mailboxes;
   }
 
   private async fetchThreads(conversationId: number): Promise<Thread[]> {

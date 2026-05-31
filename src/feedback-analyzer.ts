@@ -92,6 +92,7 @@ export interface FormattedFeatureRequest {
   votes_count: number;
   comments_count: number;
   portal: string;
+  url?: string;
   created_at: string;
   updated_at: string;
   comments: Array<{
@@ -150,7 +151,7 @@ function featureRequestToDataPoint(req: FormattedFeatureRequest): DataPoint {
 
 // ── Theme matching ──
 
-function matchesTheme(text: string, keywords: string[]): boolean {
+export function matchesTheme(text: string, keywords: string[]): boolean {
   for (const kw of keywords) {
     if (kw.includes(" ")) {
       // Multi-word: substring match
@@ -322,7 +323,7 @@ export function analyzeFeedback(
   for (const dp of dataPoints) {
     for (const theme of config.themes) {
       if (matchesTheme(dp.text, theme.keywords)) {
-        themeMatches.get(theme.id)!.push(dp);
+        themeMatches.get(theme.id)?.push(dp);
         matchedIds.add(dp.id);
       }
     }
@@ -333,7 +334,7 @@ export function analyzeFeedback(
   const rawVoteMomentums: number[] = [];
 
   for (const theme of config.themes) {
-    const points = themeMatches.get(theme.id)!;
+    const points = themeMatches.get(theme.id) ?? [];
     frequencyCounts.push(points.length);
     rawVoteMomentums.push(computeVoteMomentum(points));
   }
@@ -346,7 +347,7 @@ export function analyzeFeedback(
 
   for (let i = 0; i < config.themes.length; i++) {
     const theme = config.themes[i]!;
-    const points = themeMatches.get(theme.id)!;
+    const points = themeMatches.get(theme.id) ?? [];
     if (points.length === 0) continue;
 
     const reactiveCount = points.filter((p) => p.source === "REACTIVE").length;
