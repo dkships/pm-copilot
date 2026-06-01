@@ -10,6 +10,11 @@ All notable changes to this project are documented here. Format follows [Keep a 
   exported in the shell/parent environment (e.g. an old `PRODUCTLIFT_PORTALS`) no longer shadows
   edits to `.env`. Previously, a pre-set var made `.env` changes appear to have no effect.
 
+### Changed
+
+- `.env.example` uses generic portal names (`acme` / `beta`) instead of specific product names,
+  matching the `roadmap.example.com` convention used elsewhere in the repo.
+
 ## [1.2.0] — 2026-05-31
 
 ### Added
