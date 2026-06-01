@@ -36,12 +36,6 @@ export interface Comment {
   url: string;
 }
 
-interface Status {
-  id: number;
-  name: string;
-  color: string;
-}
-
 // ProductLift API paginated response (skip/limit style)
 interface PaginatedResponse<T> {
   data: T[];
@@ -112,13 +106,6 @@ export class ProductLiftClient {
     }
 
     return (await res.json()) as T;
-  }
-
-  async fetchStatuses(): Promise<Status[]> {
-    const res = await this.apiGet<DataResponse<Status[]> | PaginatedResponse<Status>>(
-      "/api/v1/statuses"
-    );
-    return Array.isArray(res.data) ? res.data : [res.data];
   }
 
   async fetchPosts(): Promise<PostSummary[]> {

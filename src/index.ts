@@ -7,6 +7,7 @@ import {
   HelpScoutClient,
   extractCustomerMessages,
   type Conversation,
+  type Mailbox,
 } from "./helpscout.js";
 import {
   ProductLiftClient,
@@ -45,7 +46,7 @@ const productliftClients = portalConfigs.map((c) => new ProductLiftClient(c));
 
 const server = new McpServer({
   name: "pm-copilot",
-  version: "1.0.0",
+  version: "1.2.0",
 });
 
 // ── Resources ──
@@ -123,6 +124,32 @@ function filterClientsByPortal(portalName: string | undefined): ProductLiftClien
   return productliftClients.filter(
     (_, i) => portalConfigs[i]?.name.toLowerCase() === portalName.toLowerCase()
   );
+}
+
+/**
+ * Resolve a mailbox name to its numeric ID. A provided mailbox_id wins
+ * (back-compat). Otherwise the name is matched case-insensitively against the
+ * live mailbox list. Throws a helpful error listing available names on no match.
+ * Resolved at the handler boundary so the cache key only ever sees an ID.
+ */
+async function resolveMailboxId(
+  mailboxName?: string,
+  mailboxId?: string
+): Promise<string | undefined> {
+  if (mailboxId) return mailboxId;
+  if (!mailboxName) return undefined;
+
+  const mailboxes = await helpscout.fetchMailboxes();
+  const match = mailboxes.find(
+    (m) => m.name.toLowerCase() === mailboxName.toLowerCase()
+  );
+  if (!match) {
+    const available = mailboxes.map((m) => m.name).join(", ") || "none";
+    throw new Error(
+      `No HelpScout mailbox named "${mailboxName}". Available: ${available}`
+    );
+  }
+  return String(match.id);
 }
 
 async function fetchProductLift(
@@ -308,7 +335,14 @@ server.registerTool("synthesize_feedback", {
     mailbox_id: z
       .string()
       .optional()
-      .describe("HelpScout mailbox ID to filter by (optional)"),
+      .describe("HelpScout mailbox ID to filter by (optional). Prefer mailbox_name."),
+    mailbox_name: z
+      .string()
+      .optional()
+      .describe(
+        "HelpScout mailbox name to filter by (optional, case-insensitive). " +
+        "Resolved to an ID automatically — run list_sources to see available names."
+      ),
     portal_name: z
       .string()
       .optional()
@@ -323,12 +357,14 @@ server.registerTool("synthesize_feedback", {
         "'full' (~600KB): all data points — for export/dashboard use, not LLM consumption."
       ),
   },
-}, async ({ timeframe_days, top_voted_limit, mailbox_id, portal_name, detail_level }) => {
+}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, detail_level }) => {
   try {
+    // Resolve name → ID at the handler boundary; the cache key only ever sees an ID.
+    const resolvedMailboxId = await resolveMailboxId(mailbox_name, mailbox_id);
     const data = await cachedFetchAndAnalyze({
       timeframe_days,
       top_voted_limit,
-      mailbox_id,
+      mailbox_id: resolvedMailboxId,
       portal_name,
     });
 
@@ -347,7 +383,8 @@ server.registerTool("synthesize_feedback", {
             {
               timeframe_days,
               detail_level,
-              mailbox_id: mailbox_id ?? null,
+              mailbox_id: resolvedMailboxId ?? null,
+              mailbox_name: mailbox_name ?? null,
               portal_name: portal_name ?? "all",
               top_voted_limit,
               fetched_at: new Date().toISOString(),
@@ -387,6 +424,7 @@ function formatFeatureRequest(req: FeatureRequest): FormattedFeatureRequest {
     votes_count: req.votes_count ?? 0,
     comments_count: req.comments_count ?? 0,
     portal: req.portal,
+    url: req.url,
     created_at: req.created_at,
     updated_at: req.updated_at,
     comments: req.comments.map((c) => {
@@ -495,6 +533,107 @@ function extractQuotesForTheme(
   }
 
   return quotes;
+}
+
+// ── Markdown product brief ──
+
+interface PlanPriorityForRender {
+  rank: number;
+  theme: string;
+  category: string;
+  signal_type: string;
+  priority_score: number;
+  convergent: boolean;
+  evidence: {
+    total_data_points: number;
+    support_tickets: number;
+    feature_requests: number;
+  };
+  evidence_summary: string;
+  customer_quotes: string[];
+}
+
+function renderPlanMarkdown(args: {
+  generatedAt: string;
+  timeframeDays: number;
+  dataSources: string[];
+  summary: {
+    total_signals_analyzed: number;
+    reactive_signals: number;
+    proactive_signals: number;
+    themes_detected: number;
+    convergent_themes: number;
+    unmatched_signals: number;
+  };
+  priorities: PlanPriorityForRender[];
+  emerging: Array<{ pattern: string; frequency: number }>;
+  kpiContext?: string;
+}): string {
+  const { summary } = args;
+  const lines: string[] = [];
+
+  lines.push(`# Product Plan — ${args.timeframeDays}-day window`);
+  lines.push("");
+  lines.push(
+    `_Generated ${args.generatedAt} · methodology v${METHODOLOGY_VERSION} · ` +
+      `sources: ${args.dataSources.join(", ") || "none"}_`
+  );
+  lines.push("");
+  lines.push(
+    `**Signals:** ${summary.total_signals_analyzed} analyzed ` +
+      `(${summary.reactive_signals} support tickets, ${summary.proactive_signals} feature requests) · ` +
+      `${summary.themes_detected} themes (${summary.convergent_themes} convergent) · ` +
+      `${summary.unmatched_signals} unmatched`
+  );
+  lines.push("");
+
+  if (args.priorities.length > 0) {
+    lines.push("## Priorities");
+    lines.push("");
+    lines.push("| # | Theme | Score | Tickets | FRs | Signal |");
+    lines.push("|---|-------|------:|--------:|----:|--------|");
+    for (const p of args.priorities) {
+      lines.push(
+        `| ${p.rank} | ${p.theme} | ${p.priority_score} | ` +
+          `${p.evidence.support_tickets} | ${p.evidence.feature_requests} | ` +
+          `${p.convergent ? "Convergent" : p.signal_type} |`
+      );
+    }
+    lines.push("");
+
+    for (const p of args.priorities) {
+      lines.push(
+        `### ${p.rank}. ${p.theme}  (${p.category} · score ${p.priority_score})`
+      );
+      lines.push(p.evidence_summary);
+      const quotes = p.customer_quotes.filter(
+        (q) => q && q !== "No direct customer quote available"
+      );
+      if (quotes.length > 0) {
+        lines.push("");
+        for (const q of quotes) lines.push(`- ${q}`);
+      }
+      lines.push("");
+    }
+  }
+
+  if (args.emerging.length > 0) {
+    lines.push("## Emerging themes");
+    lines.push("");
+    for (const e of args.emerging) {
+      lines.push(`- ${e.pattern} (${e.frequency})`);
+    }
+    lines.push("");
+  }
+
+  if (args.kpiContext) {
+    lines.push("## Business context (KPI)");
+    lines.push("");
+    lines.push(args.kpiContext);
+    lines.push("");
+  }
+
+  return lines.join("\n").trimEnd() + "\n";
 }
 
 // ── Detail level trimming ──
@@ -621,7 +760,14 @@ server.registerTool("generate_product_plan", {
     mailbox_id: z
       .string()
       .optional()
-      .describe("HelpScout mailbox ID to filter by (optional)"),
+      .describe("HelpScout mailbox ID to filter by (optional). Prefer mailbox_name."),
+    mailbox_name: z
+      .string()
+      .optional()
+      .describe(
+        "HelpScout mailbox name to filter by (optional, case-insensitive). " +
+        "Resolved to an ID automatically — run list_sources to see available names."
+      ),
     portal_name: z
       .string()
       .optional()
@@ -656,8 +802,15 @@ server.registerTool("generate_product_plan", {
         "'standard': adds data point titles per priority. " +
         "'full': appends the complete raw analysis for export use."
       ),
+    format: z
+      .enum(["json", "markdown"])
+      .default("json")
+      .describe(
+        "Output format. 'json' (default): structured plan for composability / further analysis. " +
+        "'markdown': a ready-to-read product brief (ranked table + quotes) for planning docs."
+      ),
   },
-}, async ({ timeframe_days, top_voted_limit, mailbox_id, portal_name, kpi_context, max_priorities, preview_only, detail_level }) => {
+}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, kpi_context, max_priorities, preview_only, detail_level, format }) => {
   try {
     // Preview mode: show what would be sent without fetching
     if (preview_only) {
@@ -680,7 +833,7 @@ server.registerTool("generate_product_plan", {
                 helpscout: {
                   will_fetch: "support conversations",
                   timeframe_days,
-                  mailbox_filter: mailbox_id ?? "all",
+                  mailbox_filter: mailbox_name ?? mailbox_id ?? "all",
                   fields_sent: ["subject (PII-scrubbed)", "customer messages (PII-scrubbed)", "tags", "thread count", "status"],
                   fields_NOT_sent: ["customer email (always redacted)", "agent responses", "internal notes", "attachments"],
                 },
@@ -709,11 +862,13 @@ server.registerTool("generate_product_plan", {
       };
     }
 
-    // Full execution: fetch, analyze, build plan
+    // Full execution: fetch, analyze, build plan.
+    // Resolve name → ID at the handler boundary; the cache key only ever sees an ID.
+    const resolvedMailboxId = await resolveMailboxId(mailbox_name, mailbox_id);
     const data = await cachedFetchAndAnalyze({
       timeframe_days,
       top_voted_limit,
-      mailbox_id,
+      mailbox_id: resolvedMailboxId,
       portal_name,
     });
 
@@ -831,11 +986,24 @@ server.registerTool("generate_product_plan", {
       }),
     };
 
+    const text =
+      format === "markdown"
+        ? renderPlanMarkdown({
+            generatedAt: plan.generated_at,
+            timeframeDays: timeframe_days,
+            dataSources: data.dataSources,
+            summary: plan.summary,
+            priorities,
+            emerging: emergingSummary,
+            kpiContext: kpi_context,
+          })
+        : JSON.stringify(plan, null, 2);
+
     return {
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify(plan, null, 2),
+          text,
         },
       ],
     };
@@ -867,8 +1035,15 @@ server.registerTool("get_feature_requests", {
       .boolean()
       .default(true)
       .describe("Include comments on each feature request (default: true)"),
+    status: z
+      .string()
+      .optional()
+      .describe(
+        "Filter to feature requests with this status (optional, case-insensitive), " +
+        "e.g. 'open', 'planned', 'completed'. Omit to return all statuses."
+      ),
   },
-}, async ({ portal_name, include_comments }) => {
+}, async ({ portal_name, include_comments, status }) => {
   if (portalConfigs.length === 0) {
     return {
       content: [
@@ -907,7 +1082,12 @@ server.registerTool("get_feature_requests", {
       allRequests.push(...requests);
     }
 
-    const formatted = allRequests.map(formatFeatureRequest);
+    const allFormatted = allRequests.map(formatFeatureRequest);
+    const formatted = status
+      ? allFormatted.filter(
+          (r) => r.status?.toLowerCase() === status.toLowerCase()
+        )
+      : allFormatted;
 
     return {
       content: [
@@ -916,9 +1096,61 @@ server.registerTool("get_feature_requests", {
           text: JSON.stringify(
             {
               portal_filter: portal_name ?? "all",
+              status_filter: status ?? "all",
               total_feature_requests: formatted.length,
               fetched_at: new Date().toISOString(),
               feature_requests: formatted,
+            },
+            null,
+            2
+          ),
+        },
+      ],
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return {
+      content: [{ type: "text" as const, text: `Error: ${message}` }],
+      isError: true,
+    };
+  }
+});
+
+server.registerTool("list_sources", {
+  title: "List Configured Sources",
+  description:
+    "List the data sources this server is connected to: HelpScout mailboxes (id + name) and " +
+    "ProductLift portals (name + url). Use these names with the mailbox_name / portal_name " +
+    "parameters on the other tools. Read-only; never returns API keys or customer data.",
+  inputSchema: {},
+}, async () => {
+  try {
+    // Project explicit fields — never spread portalConfigs (it carries apiKey).
+    const productlift_portals = portalConfigs.map((c) => ({
+      name: c.name,
+      baseUrl: c.baseUrl,
+    }));
+
+    let helpscout_mailboxes: Mailbox[] = [];
+    const warnings: string[] = [];
+    try {
+      helpscout_mailboxes = await helpscout.fetchMailboxes();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      warnings.push(`HelpScout mailbox fetch failed: ${msg}`);
+      console.error(`[pm-copilot] list_sources HelpScout error: ${msg}`);
+    }
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(
+            {
+              fetched_at: new Date().toISOString(),
+              helpscout_mailboxes,
+              productlift_portals,
+              ...(warnings.length > 0 && { warnings }),
             },
             null,
             2

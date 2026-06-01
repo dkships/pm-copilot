@@ -4,6 +4,37 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-05-31
+
+### Added
+
+- `list_sources` tool — lists configured HelpScout mailboxes (id + name) and ProductLift portals
+  (name + url) so you can discover the names to pass to `mailbox_name` / `portal_name`. Read-only;
+  projects explicit fields and never returns API keys.
+- `mailbox_name` parameter on `synthesize_feedback` and `generate_product_plan` — resolves a
+  human-readable mailbox name to its ID via a cached, paginated `GET /v2/mailboxes` lookup, so you
+  no longer need to know internal mailbox IDs. `mailbox_id` still works and takes precedence.
+- `get_feature_requests`: each request now includes its public `url`, and a `status` filter
+  (case-insensitive) narrows results to a single status — removing the need to drop to raw API
+  for roadmap-triage reads.
+- `generate_product_plan`: `format` parameter. `"markdown"` renders a ready-to-read product brief
+  (ranked table + quotes); `"json"` (default) is unchanged for composability.
+- Test suite for `src/feedback-analyzer.ts` covering theme matching (word-boundary vs substring),
+  severity/vote-momentum scoring, convergence boost, priority sort, and emerging-theme detection.
+- `scripts/call-tool.mjs` + `npm run tool` — a local runner to call a tool in isolation (and print
+  response byte size) without restarting the MCP client. Not shipped in the npm tarball.
+
+### Changed
+
+- `McpServer` version string corrected from `1.0.0` to match the package version.
+- README: documented the new parameters/tool, fixed the credit-card redaction string in the
+  security table to match the code (`[CC REDACTED]`), and added Local testing + Troubleshooting
+  sections.
+
+### Removed
+
+- Orphaned `fetchStatuses()` and its `Status` interface in `src/productlift.ts` (never called).
+
 ## [1.1.1] — 2026-05-10
 
 ### Fixed

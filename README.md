@@ -81,9 +81,10 @@ Cross-references HelpScout tickets and ProductLift feature requests, returns the
 |-----------|------|---------|-------------|
 | `timeframe_days` | number | 30 | Days to look back (1-90) |
 | `top_voted_limit` | number | 50 | Max feature requests by vote count |
-| `mailbox_id` | string | — | HelpScout mailbox filter |
+| `mailbox_id` | string | — | HelpScout mailbox filter (raw ID) |
+| `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
-| `detail_level` | string | `"summary"` | `"summary"` (~19KB), `"standard"` (~68KB), or `"full"` (~563KB) |
+| `detail_level` | string | `"summary"` | `"summary"`, `"standard"`, or `"full"`. Output size scales with data volume — for one 30-day mailbox, roughly 15KB / 60KB / 360KB |
 
 Returns themes sorted by priority score, each with reactive/proactive counts, convergence flag, evidence summaries, and representative customer quotes.
 
@@ -95,21 +96,31 @@ Builds a prioritized product plan with evidence and customer quotes. Accepts ext
 |-----------|------|---------|-------------|
 | `timeframe_days` | number | 30 | Days to look back (1-90) |
 | `top_voted_limit` | number | 50 | Max feature requests by vote count |
-| `mailbox_id` | string | — | HelpScout mailbox filter |
+| `mailbox_id` | string | — | HelpScout mailbox filter (raw ID) |
+| `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
 | `kpi_context` | string | — | Business metrics from other MCP servers |
 | `max_priorities` | number | 5 | Number of priorities to return (1-10) |
 | `preview_only` | boolean | false | Audit mode: show what data *would* be sent |
-| `detail_level` | string | `"summary"` | `"summary"` (~7KB), `"standard"` (~21KB), or `"full"` (~584KB) |
+| `detail_level` | string | `"summary"` | `"summary"`, `"standard"`, or `"full"`. Output size scales with data volume — for one 30-day mailbox, roughly 5KB / 21KB / 375KB |
+| `format` | string | `"json"` | `"json"` (structured, composable) or `"markdown"` (ready-to-read product brief) |
 
 ### `get_feature_requests`
 
-Raw ProductLift data access for browsing feature requests directly.
+Raw ProductLift data access for browsing feature requests directly. Each request includes its
+public `url`.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `portal_name` | string | — | Filter to a specific portal |
 | `include_comments` | boolean | true | Include comments on each request |
+| `status` | string | — | Filter to requests with this status (case-insensitive), e.g. `open`, `planned`, `completed` |
+
+### `list_sources`
+
+Lists the data sources the server is connected to — HelpScout mailboxes (id + name) and
+ProductLift portals (name + url) — so you can discover the names to pass to `mailbox_name` /
+`portal_name`. Read-only; never returns API keys or customer data. Takes no parameters.
 
 ## Composability in Action
 
@@ -167,7 +178,7 @@ Customer data flows through PM Copilot on its way to Claude. All text is scrubbe
 | Category | Method | Replacement |
 |----------|--------|-------------|
 | SSNs | Pattern match (`XXX-XX-XXXX`) | `[SSN REDACTED]` |
-| Credit cards | 13-19 digit sequences + Luhn validation | `[CREDIT CARD REDACTED]` |
+| Credit cards | 13-19 digit sequences + Luhn validation | `[CC REDACTED]` |
 | Email addresses | Standard email pattern | `[EMAIL REDACTED]` |
 | Phone numbers | US formats (+1, parens, dashes, dots) | `[PHONE REDACTED]` |
 | Customer email field | Always redacted | `[REDACTED]` |
@@ -194,7 +205,23 @@ npm install          # Install dependencies
 npm run build        # Compile TypeScript
 npm run dev          # Watch mode
 npm start            # Run the server
+npm test             # Run the test suite
 ```
+
+### Local testing
+
+Call a tool in isolation without restarting your MCP client — useful for iterating on changes
+and for checking response sizes:
+
+```bash
+npm run build
+npm run tool -- --list
+npm run tool -- list_sources '{}'
+npm run tool -- get_feature_requests '{"portal_name":"<your-portal>","status":"open"}'
+```
+
+The runner prints the byte size of each response. Output may include your configured source
+names/URLs (and PII-scrubbed customer text) — redact before sharing.
 
 ### Theme configuration
 
@@ -212,6 +239,17 @@ priority = (frequency × 0.35 + severity × 0.35 + vote_momentum × 0.30) × con
 - **Severity** (0.35): Reactive signals only — thread depth, recency (7-day half-life decay), tag boosts
 - **Vote momentum** (0.30): Proactive signals only — 80% votes + 20% comments
 - **Convergence** (2x): Applied when a theme has both reactive and proactive signals
+
+## Troubleshooting
+
+- **Changes aren't taking effect.** The MCP client runs the compiled `dist/`. After editing
+  source, run `npm run build` and restart the client (or the MCP server connection) to pick up
+  new code.
+- **`No HelpScout mailbox named "…"`.** Run `list_sources` to see the exact mailbox names, or
+  pass the numeric `mailbox_id` directly.
+- **`No portal found with name "…"` / portal missing.** The portal must be configured in
+  `PRODUCTLIFT_PORTALS` (or the single-portal env vars). Run `list_sources` to see configured
+  portals.
 
 ## Contributing
 
