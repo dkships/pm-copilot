@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
+// Make the project .env authoritative: override any stale value already exported
+// in the shell/parent environment (e.g. an old PRODUCTLIFT_PORTALS). Without this,
+// dotenv leaves pre-set vars untouched and edits to .env appear to have no effect.
+loadEnv({ override: true });
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
