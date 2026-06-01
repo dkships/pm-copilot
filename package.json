@@ -4,9 +4,6 @@
   "description": "MCP server that triangulates customer support tickets and feature requests to help PMs decide what to build next",
   "type": "module",
   "main": "dist/index.js",
-  "bin": {
-    "pm-copilot": "dist/index.js"
-  },
   "files": [
     "dist",
     "themes.config.json",
