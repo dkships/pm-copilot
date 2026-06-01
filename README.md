@@ -122,6 +122,61 @@ Lists the data sources the server is connected to — HelpScout mailboxes (id + 
 ProductLift portals (name + url) — so you can discover the names to pass to `mailbox_name` /
 `portal_name`. Read-only; never returns API keys or customer data. Takes no parameters.
 
+## Example output
+
+A trimmed `synthesize_feedback` response at the default `summary` detail level. Values are illustrative; note the PII scrubbing applied to the customer quote.
+
+```json
+{
+  "timeframe_days": 30,
+  "detail_level": "summary",
+  "portal_name": "all",
+  "fetched_at": "2026-06-01T16:00:00.000Z",
+  "pii_scrubbing_applied": true,
+  "pii_categories_redacted": ["email", "phone"],
+  "analysis": {
+    "total_data_points": 612,
+    "reactive_count": 548,
+    "proactive_count": 64,
+    "themes": [
+      {
+        "theme_id": "booking-scheduling",
+        "label": "Booking & Scheduling",
+        "category": "Core Product",
+        "priority_score": 87.1,
+        "convergent": true,
+        "signal_type": "convergent",
+        "reactive_count": 211,
+        "proactive_count": 19,
+        "evidence_summary": "230 signals (211 tickets, 19 requests). Convergent across both sources.",
+        "representative_quotes": [
+          "[Support ticket] \"Double-booked slots again after the timezone change — reach me at [EMAIL REDACTED]\"",
+          "[Feature request, 47 votes] \"Let me block buffer time between meetings\""
+        ]
+      },
+      {
+        "theme_id": "billing-payment",
+        "label": "Billing & Payment",
+        "category": "Monetization",
+        "priority_score": 64.3,
+        "convergent": false,
+        "signal_type": "reactive",
+        "reactive_count": 188,
+        "proactive_count": 0,
+        "evidence_summary": "188 signals (188 tickets, 0 requests). Reactive only.",
+        "representative_quotes": [
+          "[Support ticket] \"Charged twice for the annual plan\""
+        ]
+      }
+    ],
+    "emerging_themes": [
+      { "pattern": "csv export", "frequency": 12 }
+    ],
+    "unmatched_count": 38
+  }
+}
+```
+
 ## Composability in Action
 
 PM Copilot is designed to work alongside other MCP servers. Here's a worked example showing how a `kpi_context` override changes the ranking. Numbers are illustrative.
