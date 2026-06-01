@@ -84,7 +84,7 @@ Cross-references HelpScout tickets and ProductLift feature requests, returns the
 | `mailbox_id` | string | — | HelpScout mailbox filter (raw ID) |
 | `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
-| `detail_level` | string | `"summary"` | `"summary"` (~19KB), `"standard"` (~68KB), or `"full"` (~563KB) |
+| `detail_level` | string | `"summary"` | `"summary"`, `"standard"`, or `"full"`. Output size scales with data volume — for one 30-day mailbox, roughly 15KB / 60KB / 360KB |
 
 Returns themes sorted by priority score, each with reactive/proactive counts, convergence flag, evidence summaries, and representative customer quotes.
 
