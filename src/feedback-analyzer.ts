@@ -166,18 +166,40 @@ function featureRequestToDataPoint(req: FormattedFeatureRequest): DataPoint {
 
 // ── Theme matching ──
 
-export function matchesTheme(text: string, keywords: string[]): boolean {
+// Keywords compiled once per analysis run instead of per data point.
+// Semantics are identical to matching the raw keyword list: multi-word
+// keywords match as substrings, single-word keywords on a word boundary
+// (escaped, case-insensitive, no `g` flag — a shared `g` regex is stateful).
+interface CompiledKeywords {
+  substrings: string[];
+  wordRegexes: RegExp[];
+}
+
+function compileKeywords(keywords: string[]): CompiledKeywords {
+  const substrings: string[] = [];
+  const wordRegexes: RegExp[] = [];
   for (const kw of keywords) {
     if (kw.includes(" ")) {
-      // Multi-word: substring match
-      if (text.includes(kw.toLowerCase())) return true;
+      substrings.push(kw.toLowerCase());
     } else {
-      // Single-word: word boundary regex
-      const regex = new RegExp(`\\b${escapeRegex(kw)}\\b`, "i");
-      if (regex.test(text)) return true;
+      wordRegexes.push(new RegExp(`\\b${escapeRegex(kw)}\\b`, "i"));
     }
   }
+  return { substrings, wordRegexes };
+}
+
+function matchesCompiled(text: string, compiled: CompiledKeywords): boolean {
+  for (const s of compiled.substrings) {
+    if (text.includes(s)) return true;
+  }
+  for (const r of compiled.wordRegexes) {
+    if (r.test(text)) return true;
+  }
   return false;
+}
+
+export function matchesTheme(text: string, keywords: string[]): boolean {
+  return matchesCompiled(text, compileKeywords(keywords));
 }
 
 function escapeRegex(str: string): string {
@@ -333,17 +355,23 @@ export function analyzeFeedback(
     ...featureRequests.map(featureRequestToDataPoint),
   ];
 
-  // Match data points to themes
+  // Match data points to themes. Compile keywords once per run — the config
+  // is re-read per request (hot-editable), so this must not be module-cached.
   const themeMatches = new Map<string, DataPoint[]>();
   const matchedIds = new Set<string>();
+
+  const compiledThemes = config.themes.map((theme) => ({
+    theme,
+    compiled: compileKeywords(theme.keywords),
+  }));
 
   for (const theme of config.themes) {
     themeMatches.set(theme.id, []);
   }
 
   for (const dp of dataPoints) {
-    for (const theme of config.themes) {
-      if (matchesTheme(dp.text, theme.keywords)) {
+    for (const { theme, compiled } of compiledThemes) {
+      if (matchesCompiled(dp.text, compiled)) {
         themeMatches.get(theme.id)?.push(dp);
         matchedIds.add(dp.id);
       }
