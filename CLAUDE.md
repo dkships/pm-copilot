@@ -19,7 +19,7 @@ themes.config.json      # Human-editable theme definitions + keywords (project r
 
 PII scrubbing happens in `src/pii-scrubber.ts` before text enters analysis or leaves the server. Categories: SSN, credit cards (Luhn-validated), email addresses, phone numbers. Customer email field is always `[REDACTED]` regardless of match.
 
-Excluded by design (don't add without scoping a privacy review): agent/admin responses, internal HelpScout notes, attachments, voter identities, commenter emails, raw thread bodies. `kpi_context` is passed through verbatim — caller's responsibility.
+Excluded by design (don't add without scoping a privacy review): agent/admin responses, internal HelpScout notes, attachments, voter identities, commenter names and emails, raw thread bodies. `kpi_context` is passed through verbatim — caller's responsibility.
 
 Every tool response includes `pii_scrubbing_applied: true` and `pii_categories_redacted: [...]`. `preview_only: true` on `generate_product_plan` returns a manifest without fetching data.
 
