@@ -4,16 +4,58 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Security
+
+- Bumped transitive `hono` (a `@modelcontextprotocol/sdk` dependency) past the 4.12.x advisories
+  flagged high by `npm audit` (GHSA-xrhx-7g5j-rcj5 and related). Lockfile-only change; audit clean.
+
 ### Fixed
 
+- The thread-depth severity signal is live again. Thread bodies were never fetched, so every
+  conversation scored `thread_count: 0` and the `min(threads * 10, 50)` severity term always
+  contributed nothing. The count now comes from the HelpScout list API's `threads` field (no
+  extra API calls). Note: this is the total thread count (including agent replies and notes),
+  and a zero/missing count scores as the baseline 1.
+- One failing ProductLift portal no longer drops every portal's data from
+  `synthesize_feedback` / `generate_product_plan` / `get_feature_requests`. Failures surface
+  as per-portal warnings in the response.
+- A total fetch failure (all sources down) now returns `isError` instead of an empty analysis
+  that reads as a successful result, and failures are never cached.
+- Concurrent tool calls no longer interleave PII audit metadata: the module-global category
+  log was replaced with an explicit per-request sink. Scrubbing itself was never affected.
+- Feature requests are labeled with their actual source portal; previously multi-portal
+  fetches stamped every request with the filter value (`"all"`).
+- `generate_product_plan` `preview_only` now describes exactly what is fetched and sent.
+  It previously claimed comment text and customer message bodies were sent; the analysis
+  path fetches neither.
+- Unparseable `created_at` dates no longer produce NaN priority scores, and future-dated
+  tickets no longer pin severity to the cap.
+- PII-redaction placeholders (`[EMAIL REDACTED]` etc.) are stripped before n-gram detection,
+  so "email redacted" can no longer surface as an emerging theme.
+- A malformed `PRODUCTLIFT_PORTALS` no longer kills the server at startup (taking the
+  HelpScout tools with it). The server starts with zero portals and surfaces the config
+  error in tool descriptions and `list_sources`. Portal fields are also trimmed now.
+- `themes.config.json` load failures return an actionable error naming the path and problem.
 - `.env` is now authoritative: load it with `dotenv` `override: true` so a stale variable already
   exported in the shell/parent environment (e.g. an old `PRODUCTLIFT_PORTALS`) no longer shadows
   edits to `.env`. Previously, a pre-set var made `.env` changes appear to have no effect.
 
 ### Changed
 
+- `get_feature_requests` responses now include `pii_scrubbing_applied` and
+  `pii_categories_redacted`, matching the other tools.
+- Commenter names are no longer sent in `get_feature_requests` output — only the commenter
+  role (e.g. `admin`). Names were the one identity field that bypassed the scrubbing
+  guarantee; this aligns with the existing voter-identity exclusion.
+- Upstream API error text is PII-scrubbed before it enters response warnings.
 - `.env.example` uses generic portal names (`acme` / `beta`) instead of specific product names,
   matching the `roadmap.example.com` convention used elsewhere in the repo.
+
+### Removed
+
+- The unreachable thread-body fetch path (`includeThreads`, `fetchThreads`, `stripHtml`,
+  `extractCustomerMessages`) in `src/helpscout.ts`. No caller ever set `includeThreads`;
+  raw thread bodies remain excluded by design pending a privacy review.
 
 ## [1.2.0] — 2026-05-31
 

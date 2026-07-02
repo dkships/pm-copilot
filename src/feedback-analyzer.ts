@@ -95,8 +95,8 @@ export interface FormattedFeatureRequest {
   url?: string;
   created_at: string;
   updated_at: string;
+  // Commenter names are deliberately excluded — only the role leaves the server
   comments: Array<{
-    author: string;
     role: string;
     comment: string;
     created_at: string | null;
@@ -108,8 +108,23 @@ export interface FormattedFeatureRequest {
 export function loadThemesConfig(): ThemesConfig {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const configPath = resolve(__dirname, "..", "themes.config.json");
-  const raw = readFileSync(configPath, "utf-8");
-  return JSON.parse(raw) as ThemesConfig;
+  let config: ThemesConfig;
+  try {
+    const raw = readFileSync(configPath, "utf-8");
+    config = JSON.parse(raw) as ThemesConfig;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed to load themes.config.json (${configPath}): ${msg}. ` +
+        "The file must exist at the project root and contain valid JSON."
+    );
+  }
+  if (!Array.isArray(config.themes)) {
+    throw new Error(
+      'Invalid themes.config.json: "themes" must be an array of theme definitions.'
+    );
+  }
+  return config;
 }
 
 // ── Data normalization ──
@@ -189,13 +204,17 @@ function computeSeverityScore(points: DataPoint[]): number {
   for (const p of reactive) {
     let pointScore = 0;
 
-    // Thread count contributes (more back-and-forth = more severe)
-    const threads = p.metadata.thread_count ?? 1;
+    // Thread count contributes (more back-and-forth = more severe).
+    // A zero/missing count gets the baseline of 1 so the term never zeroes out.
+    const threads = p.metadata.thread_count || 1;
     pointScore += Math.min(threads * 10, 50); // cap at 50
 
-    // Recency: exponential decay (half-life of 7 days)
-    const ageMs = now - new Date(p.created_at).getTime();
-    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    // Recency: exponential decay (half-life of 7 days). Unparseable dates get
+    // no boost (age treated as Infinity); future dates clamp to age 0.
+    const createdMs = new Date(p.created_at).getTime();
+    const ageDays = Number.isFinite(createdMs)
+      ? Math.max(0, now - createdMs) / (1000 * 60 * 60 * 24)
+      : Infinity;
     const recencyBoost = 30 * Math.exp(-ageDays / 7);
     pointScore += recencyBoost;
 
@@ -235,6 +254,8 @@ function computeVoteMomentum(points: DataPoint[]): number {
 
 function tokenize(text: string, stopWords: Set<string>): string[] {
   return text
+    // Drop PII-redaction placeholders so "email redacted" never surfaces as an n-gram
+    .replace(/\[(?:ssn|cc|email|phone) redacted\]/gi, " ")
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length > 2 && !stopWords.has(w));

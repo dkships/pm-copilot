@@ -35,22 +35,12 @@ interface ConversationSummary {
   tags: Array<{ id: number; tag: string }>;
   primaryCustomer: { email: string };
   preview: string;
+  // Total thread count from the list API — all thread types (customer
+  // messages, agent replies, notes), not just customer back-and-forth.
+  threads?: number;
 }
 
-interface Thread {
-  id: number;
-  type: string;
-  body: string;
-  createdAt: string;
-  createdBy: {
-    type: "customer" | "user";
-    email?: string;
-  };
-}
-
-export interface Conversation extends ConversationSummary {
-  threads: Thread[];
-}
+export type Conversation = ConversationSummary;
 
 export interface Mailbox {
   id: number;
@@ -60,7 +50,6 @@ export interface Mailbox {
 export interface FetchOptions {
   timeframeDays: number;
   mailboxId?: string;
-  includeThreads?: boolean; // default false — set true for full thread content
 }
 
 export class HelpScoutClient {
@@ -245,14 +234,6 @@ export class HelpScoutClient {
     return mailboxes;
   }
 
-  private async fetchThreads(conversationId: number): Promise<Thread[]> {
-    const data = await this.apiGet<{
-      _embedded?: { threads: Thread[] };
-    }>(`/conversations/${conversationId}/threads`);
-
-    return data._embedded?.threads ?? [];
-  }
-
   async fetchConversations(options: FetchOptions): Promise<Conversation[]> {
     const since = new Date();
     since.setDate(since.getDate() - options.timeframeDays);
@@ -282,49 +263,9 @@ export class HelpScoutClient {
       allConversations.push(...result.conversations);
     }
 
-    // Skip thread fetching unless explicitly requested — subject + preview
-    // is sufficient for theme analysis and avoids N+1 API calls
-    if (!options.includeThreads) {
-      return allConversations.map((conv) => ({ ...conv, threads: [] }));
-    }
-
-    // Fetch threads with concurrency limit to stay under rate limit
-    const CONCURRENCY = 5;
-    const conversations: Conversation[] = [];
-    for (let i = 0; i < allConversations.length; i += CONCURRENCY) {
-      const batch = allConversations.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(async (conv) => {
-          const threads = await this.fetchThreads(conv.id);
-          return { ...conv, threads } as Conversation;
-        })
-      );
-      conversations.push(...results);
-    }
-
-    return conversations;
+    // Thread bodies are never fetched — excluded by design (avoids N+1 API
+    // calls and keeps raw message content out of the pipeline). The list
+    // API's `threads` count field is all downstream scoring needs.
+    return allConversations;
   }
-}
-
-/** Strip HTML tags from thread body text. */
-export function stripHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    .trim();
-}
-
-/** Extract customer messages from a conversation's threads */
-export function extractCustomerMessages(conv: Conversation): string[] {
-  return conv.threads
-    .filter((t) => t.createdBy.type === "customer" && t.body)
-    .map((t) => stripHtml(t.body))
-    .filter((text) => text.length > 0);
 }

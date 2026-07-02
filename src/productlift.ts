@@ -62,9 +62,14 @@ export class ProductLiftClient {
     this.portal = portal;
   }
 
+  get portalName(): string {
+    return this.portal.name;
+  }
+
   static filterRecent(posts: PostSummary[], sinceDaysAgo: number): PostSummary[] {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - sinceDaysAgo);
+    // An unparseable created_at fails the >= comparison and is excluded — fails safe.
     return posts.filter((p) => new Date(p.created_at) >= cutoff);
   }
 
@@ -175,9 +180,9 @@ export function parsePortalConfigs(): PortalConfig[] {
   if (portals) {
     return portals.split(",").map((entry) => {
       const parts = entry.trim().split("|");
-      const name = parts[0];
-      const baseUrl = parts[1];
-      const apiKey = parts.slice(2).join("|"); // rejoin — tokens may contain |
+      const name = parts[0]?.trim();
+      const baseUrl = parts[1]?.trim();
+      const apiKey = parts.slice(2).join("|").trim(); // rejoin — tokens may contain |
       if (!name || !baseUrl || !apiKey) {
         throw new Error(
           `Invalid PRODUCTLIFT_PORTALS format. Expected "name|url|key" per entry, got: ${entry}`
