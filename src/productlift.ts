@@ -65,6 +65,7 @@ export class ProductLiftClient {
   static filterRecent(posts: PostSummary[], sinceDaysAgo: number): PostSummary[] {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - sinceDaysAgo);
+    // An unparseable created_at fails the >= comparison and is excluded — fails safe.
     return posts.filter((p) => new Date(p.created_at) >= cutoff);
   }
 

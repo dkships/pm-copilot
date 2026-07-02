@@ -167,6 +167,38 @@ describe("analyzeFeedback", () => {
     expect(r.unmatched_count).toBe(1);
     expect(r.themes).toEqual([]);
   });
+
+  it("gives threadCount 0 the same baseline severity as threadCount 1", () => {
+    const zero = analyzeFeedback([conv(1, "billing invoice", { threadCount: 0 })], [], config);
+    const one = analyzeFeedback([conv(1, "billing invoice", { threadCount: 1 })], [], config);
+    const zeroBilling = zero.themes.find((t) => t.theme_id === "billing")!;
+    const oneBilling = one.themes.find((t) => t.theme_id === "billing")!;
+    expect(zeroBilling.severity_score).toBe(oneBilling.severity_score);
+  });
+
+  it("scores deeper threads as more severe (thread-count term is live)", () => {
+    const shallow = analyzeFeedback([conv(1, "billing invoice", { threadCount: 1 })], [], config);
+    const deep = analyzeFeedback([conv(1, "billing invoice", { threadCount: 3 })], [], config);
+    const shallowBilling = shallow.themes.find((t) => t.theme_id === "billing")!;
+    const deepBilling = deep.themes.find((t) => t.theme_id === "billing")!;
+    expect(deepBilling.severity_score).toBeGreaterThan(shallowBilling.severity_score);
+  });
+
+  it("keeps scores finite when created_at is unparseable", () => {
+    const r = analyzeFeedback([conv(1, "billing invoice", { createdAt: "not-a-date" })], [], config);
+    const billing = r.themes.find((t) => t.theme_id === "billing")!;
+    expect(Number.isFinite(billing.severity_score)).toBe(true);
+    expect(Number.isFinite(billing.priority_score)).toBe(true);
+  });
+
+  it("clamps future-dated signals to at most the current-day recency boost", () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const fut = analyzeFeedback([conv(1, "billing invoice", { createdAt: future })], [], config);
+    const current = analyzeFeedback([conv(1, "billing invoice", { createdAt: NOW })], [], config);
+    const futBilling = fut.themes.find((t) => t.theme_id === "billing")!;
+    const nowBilling = current.themes.find((t) => t.theme_id === "billing")!;
+    expect(futBilling.severity_score).toBeLessThanOrEqual(nowBilling.severity_score + 0.01);
+  });
 });
 
 // ── Emerging theme detection ──
@@ -188,5 +220,18 @@ describe("emerging themes", () => {
   it("ignores n-grams below the minimum frequency", () => {
     const r = analyzeFeedback([conv(1, "singular unmatched phrase zxqw")], [], config);
     expect(r.emerging_themes).toEqual([]);
+  });
+
+  it("does not surface PII-redaction placeholders as emerging themes", () => {
+    const conversations = [
+      conv(1, "zxqw problem", { preview: "reach me at [EMAIL REDACTED] about zxqw" }),
+      conv(2, "zxqw again", { preview: "call [PHONE REDACTED] regarding zxqw" }),
+      conv(3, "zxqw third", { preview: "my email [EMAIL REDACTED] bounced on zxqw" }),
+    ];
+    const r = analyzeFeedback(conversations, [], config);
+    expect(r.unmatched_count).toBe(3);
+    for (const e of r.emerging_themes) {
+      expect(e.ngram).not.toMatch(/redacted/);
+    }
   });
 });

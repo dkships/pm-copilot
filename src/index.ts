@@ -9,7 +9,6 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import {
   HelpScoutClient,
-  extractCustomerMessages,
   type Conversation,
   type Mailbox,
 } from "./helpscout.js";
@@ -80,10 +79,8 @@ server.registerResource(
 let piiCategoriesLog: Set<string> = new Set();
 
 function formatConversation(conv: Conversation): FormattedConversation {
-  // Use thread content when available, fall back to subject + preview
-  const rawMessages = conv.threads.length > 0
-    ? extractCustomerMessages(conv)
-    : [conv.preview].filter(Boolean);
+  // Thread bodies are excluded by design — subject + preview carry the customer voice
+  const rawMessages = [conv.preview].filter(Boolean);
   const { texts: customerMessages, piiCategoriesFound } = scrubPiiArray(rawMessages);
   const subjectScrub = scrubPii(conv.subject ?? "");
   const previewScrub = scrubPii(conv.preview ?? "");
@@ -101,7 +98,7 @@ function formatConversation(conv: Conversation): FormattedConversation {
     tags: conv.tags?.map((t) => t.tag) ?? [],
     preview: previewScrub.text,
     customerMessages,
-    threadCount: conv.threads.length,
+    threadCount: conv.threads ?? 0,
   };
 }
 
