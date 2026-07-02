@@ -35,9 +35,10 @@ The server scrubs PII at the format layer before any customer text leaves the pr
 Known limitations of the current scrubber:
 
 - Regexes are US-centric. International phone numbers and non-US national ID formats are not redacted.
-- Names and street addresses are not redacted (high false-positive rate).
+- Names and street addresses in message text are not redacted (high false-positive rate). ProductLift commenter names are dropped at the format layer instead.
+- Patterns are deliberately greedy: long digit runs such as order numbers, tracking IDs, and timestamps can be redacted as phone/SSN false positives. Over-redaction is preferred to leakage, so expect some non-PII numbers to be masked in analysis text.
 - The `kpi_context` tool parameter is passed verbatim. Callers are responsible for not pasting raw PII into that field.
-- Agent responses, internal HelpScout notes, attachments, voter identities, and commenter emails are excluded from fetches by design (see README "Security & PII" section).
+- Agent responses, internal HelpScout notes, attachments, voter identities, and commenter names and emails are excluded from fetches or dropped at the format layer by design (see README "Security & PII" section).
 
 If you find a way to bypass scrubbing on supported categories, that's a vulnerability — please report it.
 

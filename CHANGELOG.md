@@ -8,8 +8,14 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 - Bumped transitive `hono` (a `@modelcontextprotocol/sdk` dependency) past the 4.12.x advisories
   flagged high by `npm audit` (GHSA-xrhx-7g5j-rcj5 and related). Lockfile-only change; audit clean.
+- Bumped transitive `qs` 6.15.0 → 6.15.2 for GHSA-q8mj-m7cp-5q26 (DoS). Landed in #16
+  but was not recorded in this changelog at the time.
 
 ### Fixed
+
+- Changelog correction: v1.2.0 also removed the `bin` entry and `npx pm-copilot` support
+  added in 1.1.0 (commit c605c10); the 1.2.0 notes omitted the removal. The supported
+  install is from source: clone, build, point your MCP client at `dist/index.js`.
 
 - The thread-depth severity signal is live again. Thread bodies were never fetched, so every
   conversation scored `thread_count: 0` and the `min(threads * 10, 50)` severity term always

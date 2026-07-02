@@ -345,6 +345,9 @@ server.registerTool("synthesize_feedback", {
     "Cross-reference support tickets (HelpScout) and feature requests (ProductLift) " +
     "to find convergent signals. Returns theme-matched analysis with priority scores. " +
     "Convergent themes (appearing in both sources) get a 2x priority boost. " +
+    "Scoring follows the pm-copilot://methodology resource; scores are normalized " +
+    "within a call and not comparable across calls. This is the lower-level analysis " +
+    "tool — use generate_product_plan for a ranked plan with KPI context. " +
     `Configured portals: ${describePortals()}`,
   inputSchema: {
     timeframe_days: z
@@ -360,7 +363,10 @@ server.registerTool("synthesize_feedback", {
       .min(1)
       .max(200)
       .default(50)
-      .describe("Max feature requests to include by vote count (default: 50)"),
+      .describe(
+        "Top-voted feature requests to include per portal (default: 50). " +
+        "Recent requests within the timeframe are always included as well."
+      ),
     mailbox_id: z
       .string()
       .optional()
@@ -554,6 +560,7 @@ server.registerTool("generate_product_plan", {
     "MCP servers (Metabase, GA, etc.) via kpi_context to inform prioritization. " +
     "References the pm-copilot://methodology resource for planning framework. " +
     "Returns top priorities with evidence, customer quotes, and recommended actions. " +
+    "Use synthesize_feedback instead for the underlying theme analysis without plan framing. " +
     `Configured portals: ${describePortals()}`,
   inputSchema: {
     timeframe_days: z
@@ -569,7 +576,10 @@ server.registerTool("generate_product_plan", {
       .min(1)
       .max(200)
       .default(50)
-      .describe("Max feature requests to include by vote count (default: 50)"),
+      .describe(
+        "Top-voted feature requests to include per portal (default: 50). " +
+        "Recent requests within the timeframe are always included as well."
+      ),
     mailbox_id: z
       .string()
       .optional()
