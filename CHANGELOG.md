@@ -6,6 +6,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ### Security
 
+- Bumped transitive `hono` (a `@modelcontextprotocol/sdk` dependency) past the 4.12.x advisories
+  flagged high by `npm audit` (GHSA-xrhx-7g5j-rcj5 and related). Lockfile-only change; audit clean.
 - Bumped transitive `qs` 6.15.0 → 6.15.2 for GHSA-q8mj-m7cp-5q26 (DoS). Landed in #16
   but was not recorded in this changelog at the time.
 
