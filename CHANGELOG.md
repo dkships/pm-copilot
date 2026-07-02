@@ -4,6 +4,11 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Security
+
+- Bumped transitive `hono` (a `@modelcontextprotocol/sdk` dependency) past the 4.12.x advisories
+  flagged high by `npm audit` (GHSA-xrhx-7g5j-rcj5 and related). Lockfile-only change; audit clean.
+
 ### Fixed
 
 - The thread-depth severity signal is live again. Thread bodies were never fetched, so every
