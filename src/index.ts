@@ -73,7 +73,7 @@ function describePortals(): string {
 
 const server = new McpServer({
   name: "pm-copilot",
-  version: "1.2.0",
+  version: "1.3.0",
 });
 
 // ── Resources ──
