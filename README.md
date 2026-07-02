@@ -80,11 +80,11 @@ Cross-references HelpScout tickets and ProductLift feature requests, returns the
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `timeframe_days` | number | 30 | Days to look back (1-90) |
-| `top_voted_limit` | number | 50 | Max feature requests by vote count |
+| `top_voted_limit` | number | 50 | Top-voted requests per portal; recent requests in the timeframe are always included on top |
 | `mailbox_id` | string | — | HelpScout mailbox filter (raw ID) |
 | `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
-| `detail_level` | string | `"summary"` | `"summary"`, `"standard"`, or `"full"`. Output size scales with data volume — for one 30-day mailbox, roughly 15KB / 60KB / 360KB |
+| `detail_level` | string | `"summary"` | `"summary"`, `"standard"`, or `"full"`. Output size scales with data volume — roughly 20KB / 100KB / 600KB |
 
 Returns themes sorted by priority score, each with reactive/proactive counts, convergence flag, evidence summaries, and representative customer quotes.
 
@@ -95,7 +95,7 @@ Builds a prioritized product plan with evidence and customer quotes. Accepts ext
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `timeframe_days` | number | 30 | Days to look back (1-90) |
-| `top_voted_limit` | number | 50 | Max feature requests by vote count |
+| `top_voted_limit` | number | 50 | Top-voted requests per portal; recent requests in the timeframe are always included on top |
 | `mailbox_id` | string | — | HelpScout mailbox filter (raw ID) |
 | `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
@@ -142,13 +142,13 @@ A trimmed `synthesize_feedback` response at the default `summary` detail level. 
       {
         "theme_id": "booking-scheduling",
         "label": "Booking & Scheduling",
-        "category": "Core Product",
+        "category": "core",
         "priority_score": 87.1,
         "convergent": true,
         "signal_type": "convergent",
         "reactive_count": 211,
         "proactive_count": 19,
-        "evidence_summary": "230 signals (211 tickets, 19 requests). Convergent across both sources.",
+        "evidence_summary": "230 signals (211 support tickets, 19 feature requests). Convergent — appears in both support and feature requests (2x priority boost).",
         "representative_quotes": [
           "[Support ticket] \"Double-booked slots again after the timezone change — reach me at [EMAIL REDACTED]\"",
           "[Feature request, 47 votes] \"Let me block buffer time between meetings\""
@@ -157,13 +157,13 @@ A trimmed `synthesize_feedback` response at the default `summary` detail level. 
       {
         "theme_id": "billing-payment",
         "label": "Billing & Payment",
-        "category": "Monetization",
+        "category": "billing",
         "priority_score": 64.3,
         "convergent": false,
         "signal_type": "reactive",
         "reactive_count": 188,
         "proactive_count": 0,
-        "evidence_summary": "188 signals (188 tickets, 0 requests). Reactive only.",
+        "evidence_summary": "188 signals (188 support tickets).",
         "representative_quotes": [
           "[Support ticket] \"Charged twice for the annual plan\""
         ]
@@ -222,7 +222,7 @@ Key principles:
 - **Reactive > proactive** — Broken stuff drives churn. You can survive not having a feature; you can't survive errors.
 - **Business metrics override the formula** — Rising churn, dropping conversion, or revenue impact can change everything.
 
-The methodology is versioned (v2.0) and served as markdown content via the MCP resource protocol. Claude references it automatically when using `generate_product_plan`.
+The methodology is versioned (v2.1) and served as markdown content via the MCP resource protocol. Every `generate_product_plan` response links to it (`methodology_resource`) and, when `kpi_context` is provided, instructs Claude to apply it — whether it actually gets read depends on the MCP client surfacing resources.
 
 ## Security
 
@@ -246,6 +246,7 @@ Customer data flows through PM Copilot on its way to Claude. All text is scrubbe
 | Internal HelpScout notes | May contain credentials, workarounds, internal discussions |
 | Attachments | Could contain screenshots with PII, invoices, medical documents |
 | Voter identities | Vote counts are sufficient; individual identity adds no PM value |
+| Commenter names | The role (admin vs customer) is all the analysis needs |
 
 ### Audit controls
 
@@ -282,7 +283,7 @@ names/URLs (and PII-scrubbed customer text) — redact before sharing.
 
 `themes.config.json` in the project root defines what themes to look for. Edit without rebuilding — loaded at runtime.
 
-Ships with 16 data-driven themes across 9 categories. Add your own by appending to the `themes` array. Unmatched data points are analyzed for emerging patterns using bigram/trigram frequency detection.
+Ships with 16 data-driven themes across 11 categories. Add your own by appending to the `themes` array. Unmatched data points are analyzed for emerging patterns using bigram/trigram frequency detection.
 
 ### Scoring formula
 
@@ -291,9 +292,11 @@ priority = (frequency × 0.35 + severity × 0.35 + vote_momentum × 0.30) × con
 ```
 
 - **Frequency** (0.35): Count of data points, normalized across themes
-- **Severity** (0.35): Reactive signals only — thread depth, recency (7-day half-life decay), tag boosts
+- **Severity** (0.35): Reactive signals only — thread count (total, including agent replies), recency (7-day half-life decay), tag boosts
 - **Vote momentum** (0.30): Proactive signals only — 80% votes + 20% comments
 - **Convergence** (2x): Applied when a theme has both reactive and proactive signals
+
+Frequency and vote momentum are normalized against the top theme in the same call, so scores are relative to one analysis window. Compare rankings across calls, not raw scores.
 
 ## Troubleshooting
 

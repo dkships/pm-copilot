@@ -6,7 +6,7 @@
  * reference it when using generate_product_plan.
  */
 
-export const METHODOLOGY_VERSION = "2.0";
+export const METHODOLOGY_VERSION = "2.1";
 
 export const METHODOLOGY_CONTENT = `# David Kelly's Product Planning Framework v${METHODOLOGY_VERSION}
 
@@ -32,7 +32,7 @@ Convergent themes get a 2x priority boost. In practice, convergent themes have b
 People hitting real pain right now. I weight these heavier than feature requests because broken stuff drives churn. You can survive not having a feature; you can't survive your booking page throwing errors.
 
 Severity indicators I track:
-- Thread count: 5+ back-and-forth messages means the issue is complex or genuinely confusing. Either way, needs fixing.
+- Thread count: the total number of messages on the ticket, including agent replies. 5+ threads means the issue is complex or genuinely confusing. Either way, needs fixing.
 - Recency: A spike in the last 7 days matters way more than a steady trickle over 90 days. Spikes mean something broke. I use a 7-day half-life decay so recent pain dominates.
 - Tags: "escalation", "critical", "urgent", "bug" — these are the support team telling me normal workflow couldn't handle it.
 
@@ -52,6 +52,8 @@ priority = (frequency × 0.35 + severity × 0.35 + vote_momentum × 0.30)
 - Severity (35%): How bad it is. 5 people who can't log in matters more than 50 who want a font change.
 - Vote momentum (30%): Slightly lower because votes skew toward power users who find roadmap pages.
 - Convergence (2x): When a theme appears in both sources, the entire score doubles. Strongest lever in the system.
+
+Frequency and vote momentum are normalized against the top theme in the same run, so a score only means something relative to that one analysis window. Don't compare scores across calls or timeframes — compare rankings instead.
 
 ## When Business Metrics Change Everything
 
