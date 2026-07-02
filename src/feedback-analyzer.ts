@@ -95,8 +95,8 @@ export interface FormattedFeatureRequest {
   url?: string;
   created_at: string;
   updated_at: string;
+  // Commenter names are deliberately excluded — only the role leaves the server
   comments: Array<{
-    author: string;
     role: string;
     comment: string;
     created_at: string | null;
@@ -108,8 +108,23 @@ export interface FormattedFeatureRequest {
 export function loadThemesConfig(): ThemesConfig {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const configPath = resolve(__dirname, "..", "themes.config.json");
-  const raw = readFileSync(configPath, "utf-8");
-  return JSON.parse(raw) as ThemesConfig;
+  let config: ThemesConfig;
+  try {
+    const raw = readFileSync(configPath, "utf-8");
+    config = JSON.parse(raw) as ThemesConfig;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed to load themes.config.json (${configPath}): ${msg}. ` +
+        "The file must exist at the project root and contain valid JSON."
+    );
+  }
+  if (!Array.isArray(config.themes)) {
+    throw new Error(
+      'Invalid themes.config.json: "themes" must be an array of theme definitions.'
+    );
+  }
+  return config;
 }
 
 // ── Data normalization ──

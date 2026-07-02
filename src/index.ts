@@ -16,7 +16,7 @@ import {
   ProductLiftClient,
   parsePortalConfigs,
 } from "./productlift.js";
-import type { FeatureRequest, Comment } from "./productlift.js";
+import type { FeatureRequest, Comment, PortalConfig } from "./productlift.js";
 import {
   analyzeFeedback,
   loadThemesConfig,
@@ -43,9 +43,26 @@ if (!HELPSCOUT_APP_ID || !HELPSCOUT_APP_SECRET) {
 
 const helpscout = new HelpScoutClient(HELPSCOUT_APP_ID, HELPSCOUT_APP_SECRET);
 
-// ProductLift setup
-const portalConfigs = parsePortalConfigs();
+// ProductLift setup — a bad portal config degrades to zero portals instead of
+// killing the HelpScout tools with it. The error is surfaced in tool
+// descriptions and list_sources so it's discoverable from the client.
+let portalConfigs: PortalConfig[] = [];
+let portalConfigError: string | undefined;
+try {
+  portalConfigs = parsePortalConfigs();
+} catch (error) {
+  portalConfigError = error instanceof Error ? error.message : String(error);
+  console.error(`[pm-copilot] ProductLift config error: ${portalConfigError}`);
+}
 const productliftClients = portalConfigs.map((c) => new ProductLiftClient(c));
+
+function describePortals(): string {
+  if (portalConfigError) return `none (config error: ${portalConfigError})`;
+  if (portalConfigs.length === 0) {
+    return "none (set PRODUCTLIFT_PORTALS or PRODUCTLIFT_PORTAL_URL in .env)";
+  }
+  return portalConfigs.map((c) => c.name).join(", ");
+}
 
 const server = new McpServer({
   name: "pm-copilot",
@@ -75,17 +92,16 @@ server.registerResource(
   })
 );
 
-// Track PII categories found across all data in a request
-let piiCategoriesLog: Set<string> = new Set();
-
-function formatConversation(conv: Conversation): FormattedConversation {
+// PII categories found while formatting are collected into an explicit
+// per-request sink (never a module global — concurrent tool calls interleave).
+function formatConversation(conv: Conversation, piiSink: Set<string>): FormattedConversation {
   // Thread bodies are excluded by design — subject + preview carry the customer voice
   const rawMessages = [conv.preview].filter(Boolean);
   const { texts: customerMessages, piiCategoriesFound } = scrubPiiArray(rawMessages);
   const subjectScrub = scrubPii(conv.subject ?? "");
   const previewScrub = scrubPii(conv.preview ?? "");
   for (const cat of [...piiCategoriesFound, ...subjectScrub.piiCategoriesFound, ...previewScrub.piiCategoriesFound]) {
-    piiCategoriesLog.add(cat);
+    piiSink.add(cat);
   }
   return {
     id: conv.id,
@@ -118,6 +134,9 @@ interface FetchedData {
   piiCategoriesRedacted: string[];
   dataSources: string[];
   warnings: string[];
+  // True when every configured source failed — callers should return an error
+  // instead of presenting an empty analysis as a successful result.
+  fetchFailed: boolean;
 }
 
 function filterClientsByPortal(portalName: string | undefined): ProductLiftClient[] {
@@ -155,15 +174,17 @@ async function resolveMailboxId(
 
 async function fetchProductLift(
   params: FetchParams,
+  piiSink: Set<string>,
   includeComments = false
-): Promise<FormattedFeatureRequest[]> {
-  if (portalConfigs.length === 0) return [];
+): Promise<{ requests: FormattedFeatureRequest[]; warnings: string[] }> {
+  if (portalConfigs.length === 0) return { requests: [], warnings: [] };
 
   const clients = filterClientsByPortal(params.portal_name);
-  if (clients.length === 0) return [];
+  if (clients.length === 0) return { requests: [], warnings: [] };
 
-  // Fetch all portals in parallel
-  const results = await Promise.all(
+  // Fetch portals in parallel, each isolated — one failing portal becomes a
+  // warning instead of dropping every portal's data
+  const results = await Promise.allSettled(
     clients.map(async (client) => {
       const posts = await client.fetchPosts();
 
@@ -189,18 +210,35 @@ async function fetchProductLift(
         }
 
         formatted.push(
-          formatFeatureRequest({
-            ...post,
-            comments,
-            portal: params.portal_name ?? "all",
-          })
+          formatFeatureRequest(
+            {
+              ...post,
+              comments,
+              portal: client.portalName,
+            },
+            piiSink
+          )
         );
       }
       return formatted;
     })
   );
 
-  return results.flat();
+  const requests: FormattedFeatureRequest[] = [];
+  const warnings: string[] = [];
+  results.forEach((result, i) => {
+    if (result.status === "fulfilled") {
+      requests.push(...result.value);
+    } else {
+      const msg =
+        result.reason instanceof Error ? result.reason.message : String(result.reason);
+      warnings.push(
+        scrubPii(`ProductLift portal "${clients[i]?.portalName}" fetch failed: ${msg}`).text
+      );
+    }
+  });
+
+  return { requests, warnings };
 }
 
 // ── Response cache ──
@@ -230,7 +268,10 @@ async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> 
   console.error(`[pm-copilot] Cache miss (key=${key}), fetching fresh data...`);
   const data = await fetchAndAnalyze(params);
 
-  fetchCache.set(key, { data, timestamp: Date.now() });
+  // Never cache a total fetch failure — a transient outage shouldn't stick for 5 minutes
+  if (!data.fetchFailed) {
+    fetchCache.set(key, { data, timestamp: Date.now() });
+  }
 
   // Evict expired entries
   for (const [k, entry] of fetchCache) {
@@ -242,9 +283,6 @@ async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> 
 
 async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
   const piiCategories = new Set<string>();
-  const prevLog = piiCategoriesLog;
-  piiCategoriesLog = piiCategories;
-
   const warnings: string[] = [];
 
   // Fetch both sources independently — one failing doesn't block the other
@@ -254,8 +292,8 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
         timeframeDays: params.timeframe_days,
         mailboxId: params.mailbox_id,
       })
-      .then((convs) => convs.map(formatConversation)),
-    fetchProductLift(params),
+      .then((convs) => convs.map((c) => formatConversation(c, piiCategories))),
+    fetchProductLift(params, piiCategories),
   ]);
 
   let conversations: FormattedConversation[] = [];
@@ -265,23 +303,31 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
     const msg = hsResult.reason instanceof Error
       ? hsResult.reason.message
       : String(hsResult.reason);
-    warnings.push(`HelpScout fetch failed: ${msg}`);
+    warnings.push(scrubPii(`HelpScout fetch failed: ${msg}`).text);
     console.error(`[pm-copilot] HelpScout error: ${msg}`);
   }
 
   let featureRequests: FormattedFeatureRequest[] = [];
+  let productliftFailed = false;
   if (plResult.status === "fulfilled") {
-    featureRequests = plResult.value;
+    featureRequests = plResult.value.requests;
+    warnings.push(...plResult.value.warnings);
+    productliftFailed =
+      featureRequests.length === 0 && plResult.value.warnings.length > 0;
   } else {
+    productliftFailed = true;
     const msg = plResult.reason instanceof Error
       ? plResult.reason.message
       : String(plResult.reason);
-    warnings.push(`ProductLift fetch failed: ${msg}`);
+    warnings.push(scrubPii(`ProductLift fetch failed: ${msg}`).text);
     console.error(`[pm-copilot] ProductLift error: ${msg}`);
   }
 
-  // Restore previous PII log reference (in case of concurrent calls)
-  piiCategoriesLog = prevLog;
+  // Total failure = HelpScout failed AND ProductLift failed or isn't configured.
+  // An unconfigured ProductLift alone is a legitimate HelpScout-only setup.
+  const fetchFailed =
+    hsResult.status === "rejected" &&
+    (portalConfigs.length === 0 || productliftFailed);
 
   const config = loadThemesConfig();
   const analysis = analyzeFeedback(conversations, featureRequests, config);
@@ -306,6 +352,7 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
     piiCategoriesRedacted: [...piiCategories],
     dataSources,
     warnings,
+    fetchFailed,
   };
 }
 
@@ -317,7 +364,7 @@ server.registerTool("synthesize_feedback", {
     "Cross-reference support tickets (HelpScout) and feature requests (ProductLift) " +
     "to find convergent signals. Returns theme-matched analysis with priority scores. " +
     "Convergent themes (appearing in both sources) get a 2x priority boost. " +
-    `Configured portals: ${portalConfigs.length > 0 ? portalConfigs.map((c) => c.name).join(", ") : "none"}`,
+    `Configured portals: ${describePortals()}`,
   inputSchema: {
     timeframe_days: z
       .number()
@@ -369,6 +416,18 @@ server.registerTool("synthesize_feedback", {
       portal_name,
     });
 
+    if (data.fetchFailed) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error: all data sources failed to fetch.\n${data.warnings.join("\n")}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
     const trimmedAnalysis = trimAnalysisForDetail(
       data.analysis,
       detail_level,
@@ -410,11 +469,11 @@ server.registerTool("synthesize_feedback", {
   }
 });
 
-function formatFeatureRequest(req: FeatureRequest): FormattedFeatureRequest {
+function formatFeatureRequest(req: FeatureRequest, piiSink: Set<string>): FormattedFeatureRequest {
   const titleScrub = scrubPii(req.title);
   const descScrub = scrubPii(req.description);
   for (const cat of [...titleScrub.piiCategoriesFound, ...descScrub.piiCategoriesFound]) {
-    piiCategoriesLog.add(cat);
+    piiSink.add(cat);
   }
   return {
     id: req.id,
@@ -430,9 +489,10 @@ function formatFeatureRequest(req: FeatureRequest): FormattedFeatureRequest {
     updated_at: req.updated_at,
     comments: req.comments.map((c) => {
       const commentScrub = scrubPii(c.comment);
-      for (const cat of commentScrub.piiCategoriesFound) piiCategoriesLog.add(cat);
+      for (const cat of commentScrub.piiCategoriesFound) piiSink.add(cat);
+      // Commenter names are deliberately dropped — only the role leaves the
+      // server, consistent with the voter-identity exclusion.
       return {
-        author: c.author.name,
         role: c.author.role,
         comment: commentScrub.text,
         created_at: c.created_at,
@@ -504,8 +564,9 @@ function extractQuotesForTheme(
       const conv = conversationMap.get(dp.id);
       if (!conv) continue;
 
-      // Prefer customer message that isn't agent text, fall back to subject
-      const msg = conv.customerMessages[0] ?? "";
+      // Prefer customer message that isn't agent text, fall back to subject.
+      // Collapse whitespace so embedded newlines can't break markdown output.
+      const msg = (conv.customerMessages[0] ?? "").replace(/\s+/g, " ").trim();
       if (msg && !isLikelyAgentResponse(msg)) {
         const truncated = msg.length > 200 ? msg.slice(0, 197) + "..." : msg;
         quotes.push(`[Support ticket] "${truncated}"`);
@@ -518,7 +579,7 @@ function extractQuotesForTheme(
       if (req) {
         const customerComment = req.comments.find((c) => c.role !== "admin");
         if (customerComment && !isLikelyAgentResponse(customerComment.comment)) {
-          const msg = customerComment.comment;
+          const msg = customerComment.comment.replace(/\s+/g, " ").trim();
           const truncated = msg.length > 200 ? msg.slice(0, 197) + "..." : msg;
           quotes.push(`[Feature request, ${req.votes_count} votes] "${truncated}"`);
         } else {
@@ -742,7 +803,7 @@ server.registerTool("generate_product_plan", {
     "MCP servers (Metabase, GA, etc.) via kpi_context to inform prioritization. " +
     "References the pm-copilot://methodology resource for planning framework. " +
     "Returns top priorities with evidence, customer quotes, and recommended actions. " +
-    `Configured portals: ${portalConfigs.length > 0 ? portalConfigs.map((c) => c.name).join(", ") : "none"}`,
+    `Configured portals: ${describePortals()}`,
   inputSchema: {
     timeframe_days: z
       .number()
@@ -832,18 +893,18 @@ server.registerTool("generate_product_plan", {
                 description: "This is a preview of what data would be fetched and sent to Claude.",
                 data_sources: previewSources,
                 helpscout: {
-                  will_fetch: "support conversations",
+                  will_fetch: "support conversation summaries (subject + preview, not full message bodies)",
                   timeframe_days,
                   mailbox_filter: mailbox_name ?? mailbox_id ?? "all",
-                  fields_sent: ["subject (PII-scrubbed)", "customer messages (PII-scrubbed)", "tags", "thread count", "status"],
-                  fields_NOT_sent: ["customer email (always redacted)", "agent responses", "internal notes", "attachments"],
+                  fields_sent: ["subject (PII-scrubbed)", "preview snippet (PII-scrubbed)", "tags", "status", "created/closed timestamps", "thread count"],
+                  fields_NOT_sent: ["customer email (always redacted)", "full thread/message bodies (never fetched)", "attachments"],
                 },
                 productlift: {
-                  will_fetch: portalConfigs.length > 0 ? "feature request posts + comments" : "SKIPPED (not configured)",
+                  will_fetch: portalConfigs.length > 0 ? "feature request posts (comment text is NOT fetched by this tool)" : "SKIPPED (not configured)",
                   portals: filteredPortals,
                   top_voted_limit,
-                  fields_sent: ["title (PII-scrubbed)", "description (PII-scrubbed)", "vote count", "comment text (PII-scrubbed)", "status"],
-                  fields_NOT_sent: ["voter identities", "commenter emails", "internal admin notes"],
+                  fields_sent: ["title (PII-scrubbed)", "description (PII-scrubbed)", "vote count", "comment count", "status", "timestamps"],
+                  fields_NOT_sent: ["comment text (not fetched by this tool)", "voter identities", "commenter names and emails"],
                 },
                 pii_scrubbing: {
                   enabled: true,
@@ -872,6 +933,18 @@ server.registerTool("generate_product_plan", {
       mailbox_id: resolvedMailboxId,
       portal_name,
     });
+
+    if (data.fetchFailed) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error: all data sources failed to fetch.\n${data.warnings.join("\n")}`,
+          },
+        ],
+        isError: true,
+      };
+    }
 
     // Build lookup maps for quote extraction
     const conversationMap = new Map<string, FormattedConversation>();
@@ -1024,7 +1097,7 @@ server.registerTool("get_feature_requests", {
     "Pull feature requests from ProductLift portals. " +
     "Returns posts with vote counts, statuses, categories, and comments. " +
     "Use this to understand what customers are asking for and prioritize the roadmap. " +
-    `Configured portals: ${portalConfigs.length > 0 ? portalConfigs.map((c) => c.name).join(", ") : "none (set PRODUCTLIFT_PORTALS or PRODUCTLIFT_PORTAL_URL in .env)"}`,
+    `Configured portals: ${describePortals()}`,
   inputSchema: {
     portal_name: z
       .string()
@@ -1046,13 +1119,11 @@ server.registerTool("get_feature_requests", {
   },
 }, async ({ portal_name, include_comments, status }) => {
   if (portalConfigs.length === 0) {
+    const detail = portalConfigError
+      ? `ProductLift config error: ${portalConfigError}`
+      : "No ProductLift portals configured. Set PRODUCTLIFT_PORTALS or PRODUCTLIFT_PORTAL_URL + PRODUCTLIFT_API_KEY in .env";
     return {
-      content: [
-        {
-          type: "text" as const,
-          text: "Error: No ProductLift portals configured. Set PRODUCTLIFT_PORTALS or PRODUCTLIFT_PORTAL_URL + PRODUCTLIFT_API_KEY in .env",
-        },
-      ],
+      content: [{ type: "text" as const, text: `Error: ${detail}` }],
       isError: true,
     };
   }
@@ -1077,13 +1148,30 @@ server.registerTool("get_feature_requests", {
       };
     }
 
+    // Fetch each portal independently — one failing portal becomes a warning
     const allRequests: FeatureRequest[] = [];
+    const warnings: string[] = [];
     for (const client of clients) {
-      const requests = await client.fetchFeatureRequests(include_comments);
-      allRequests.push(...requests);
+      try {
+        const requests = await client.fetchFeatureRequests(include_comments);
+        allRequests.push(...requests);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        warnings.push(
+          scrubPii(`ProductLift portal "${client.portalName}" fetch failed: ${msg}`).text
+        );
+      }
     }
 
-    const allFormatted = allRequests.map(formatFeatureRequest);
+    if (allRequests.length === 0 && warnings.length > 0) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${warnings.join("; ")}` }],
+        isError: true,
+      };
+    }
+
+    const piiCategories = new Set<string>();
+    const allFormatted = allRequests.map((r) => formatFeatureRequest(r, piiCategories));
     const formatted = status
       ? allFormatted.filter(
           (r) => r.status?.toLowerCase() === status.toLowerCase()
@@ -1100,6 +1188,9 @@ server.registerTool("get_feature_requests", {
               status_filter: status ?? "all",
               total_feature_requests: formatted.length,
               fetched_at: new Date().toISOString(),
+              pii_scrubbing_applied: true,
+              pii_categories_redacted: [...piiCategories],
+              ...(warnings.length > 0 && { warnings }),
               feature_requests: formatted,
             },
             null,
@@ -1134,6 +1225,9 @@ server.registerTool("list_sources", {
 
     let helpscout_mailboxes: Mailbox[] = [];
     const warnings: string[] = [];
+    if (portalConfigError) {
+      warnings.push(`ProductLift config error: ${portalConfigError}`);
+    }
     try {
       helpscout_mailboxes = await helpscout.fetchMailboxes();
     } catch (error) {
