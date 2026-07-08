@@ -17,10 +17,10 @@ An MCP server that triangulates customer support tickets and feature requests to
 
 ## What Makes This Different
 
-- **Signal triangulation** — Not just data access. Matches support tickets against feature requests to find convergent themes, then scores them with a weighted formula that gives convergent signals a 2x priority boost.
-- **Composability** — Designed to work *with* other MCP servers. Pass churn data from Metabase or traffic trends from Google Analytics into `generate_product_plan` via `kpi_context`, and the methodology adjusts priorities accordingly.
-- **PM methodology built in** — Opinionated scoring based on 7 years of real product management across 9 products and 1M+ users. Not a generic framework — an actual decision-making process exposed as an MCP resource.
-- **PII scrubbing** — Customer data never reaches the LLM unfiltered. SSNs, credit cards (Luhn-validated), emails, and phone numbers are redacted before analysis. Agent responses are filtered out of quotes.
+- **Signal triangulation.** Matches support tickets against feature requests to find convergent themes, then scores them with a weighted formula that gives convergent signals a 2x priority boost.
+- **Composability.** Works alongside other MCP servers. Pass churn data from Metabase or traffic trends from Google Analytics into `generate_product_plan` via `kpi_context`, and the methodology adjusts priorities accordingly.
+- **Built-in PM methodology.** Opinionated scoring based on 7 years of product management across 9 products and 1M+ users. It's a real decision-making process exposed as an MCP resource, not a generic framework.
+- **PII scrubbing.** Customer data never reaches the LLM unfiltered. SSNs, credit cards (Luhn-validated), emails, and phone numbers are redacted before analysis. Agent responses are filtered out of quotes.
 
 ## Architecture
 
@@ -217,10 +217,10 @@ Product B deprioritized (stable metrics, no fire). Product A's 22% organic traff
 PM Copilot exposes a `pm-copilot://methodology` resource — David Kelly's product planning framework, built over 7 years of launching 9 products to 1M+ users.
 
 Key principles:
-- **The 5% rule** — You complete ~5% of what customers ask for each month. The framework identifies which 5% matters most.
-- **Convergent signals always win** — Same theme in both support tickets AND feature requests = highest confidence signal.
-- **Reactive > proactive** — Broken stuff drives churn. You can survive not having a feature; you can't survive errors.
-- **Business metrics override the formula** — Rising churn, dropping conversion, or revenue impact can change everything.
+- **The 5% rule.** You complete about 5% of what customers ask for each month. The framework identifies which 5% matters most.
+- **Convergent signals always win.** The same theme in both support tickets and feature requests is the highest-confidence signal.
+- **Reactive > proactive.** Broken stuff drives churn. You can survive not having a feature; you can't survive errors.
+- **Business metrics override the formula.** Rising churn, dropping conversion, or revenue impact can change everything.
 
 The methodology is versioned (v2.1) and served as markdown content via the MCP resource protocol. Every `generate_product_plan` response links to it (`methodology_resource`) and, when `kpi_context` is provided, instructs Claude to apply it — whether it actually gets read depends on the MCP client surfacing resources.
 
