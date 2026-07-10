@@ -143,8 +143,21 @@ export class ProductLiftClient {
     return Array.isArray(res.data) ? res.data : [res.data];
   }
 
-  async fetchFeatureRequests(includeComments: boolean): Promise<FeatureRequest[]> {
-    const posts = await this.fetchPosts();
+  async fetchFeatureRequests(
+    includeComments: boolean,
+    statusFilter?: string
+  ): Promise<FeatureRequest[]> {
+    let posts = await this.fetchPosts();
+
+    // Filter by status BEFORE the comment-fetch loop so filtered-out posts
+    // cost no comment API calls. Matches the formatted-status semantics:
+    // status name compared case-insensitively, null-status posts excluded.
+    if (statusFilter !== undefined) {
+      posts = posts.filter(
+        (p) => p.status?.name?.toLowerCase() === statusFilter.toLowerCase()
+      );
+    }
+
     const requests: FeatureRequest[] = [];
 
     for (const post of posts) {

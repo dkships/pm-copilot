@@ -254,7 +254,6 @@ export class HelpScoutClient {
 
     // Fetch remaining pages
     for (let page = 2; page <= totalPages; page++) {
-      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
       const result = await this.fetchConversationsPage(
         query,
         options.mailboxId,
