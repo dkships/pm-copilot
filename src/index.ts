@@ -883,7 +883,7 @@ server.registerTool("get_feature_requests", {
     const warnings: string[] = [];
     for (const client of clients) {
       try {
-        const requests = await client.fetchFeatureRequests(include_comments);
+        const requests = await client.fetchFeatureRequests(include_comments, status || undefined);
         allRequests.push(...requests);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -900,13 +900,10 @@ server.registerTool("get_feature_requests", {
       };
     }
 
+    // Status filtering happens in fetchFeatureRequests, before comments are
+    // fetched, so filtered-out posts cost no comment API calls.
     const piiCategories = new Set<string>();
-    const allFormatted = allRequests.map((r) => formatFeatureRequest(r, piiCategories));
-    const formatted = status
-      ? allFormatted.filter(
-          (r) => r.status?.toLowerCase() === status.toLowerCase()
-        )
-      : allFormatted;
+    const formatted = allRequests.map((r) => formatFeatureRequest(r, piiCategories));
 
     return {
       content: [

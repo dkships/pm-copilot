@@ -86,3 +86,104 @@ describe("ProductLiftClient", () => {
     expect(client.portalName).toBe("acme");
   });
 });
+
+describe("fetchFeatureRequests status pre-filter", () => {
+  const jsonResponse = (body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  const makePost = (
+    id: string,
+    status: { id: number; name: string; color: string } | null
+  ) => ({
+    id,
+    title: `Post ${id}`,
+    description: "",
+    status,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("skips comment fetches for posts whose status fails the filter", async () => {
+    const posts = [
+      makePost("1", { id: 1, name: "Planned", color: "#00f" }),
+      makePost("2", { id: 2, name: "Open", color: "#0f0" }),
+      makePost("3", null),
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/comments")) {
+        return jsonResponse({ data: [] });
+      }
+      return jsonResponse({
+        data: posts,
+        hasMore: false,
+        total: posts.length,
+        skip: 0,
+        limit: 10,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ProductLiftClient({
+      name: "acme",
+      baseUrl: "https://roadmap.acme.com",
+      apiKey: "secret",
+    });
+
+    const requests = await client.fetchFeatureRequests(true, "planned");
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.id).toBe("1");
+
+    const commentUrls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes("/comments"));
+    expect(commentUrls).toEqual([
+      "https://roadmap.acme.com/api/v1/posts/1/comments",
+    ]);
+  });
+
+  it("fetches comments for every post when no status filter is given", async () => {
+    const posts = [
+      makePost("1", { id: 1, name: "Planned", color: "#00f" }),
+      makePost("2", null),
+    ];
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/comments")) {
+        return jsonResponse({ data: [] });
+      }
+      return jsonResponse({
+        data: posts,
+        hasMore: false,
+        total: posts.length,
+        skip: 0,
+        limit: 10,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ProductLiftClient({
+      name: "acme",
+      baseUrl: "https://roadmap.acme.com",
+      apiKey: "secret",
+    });
+
+    const requests = await client.fetchFeatureRequests(true);
+
+    expect(requests).toHaveLength(2);
+    const commentUrls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes("/comments"));
+    expect(commentUrls).toHaveLength(2);
+  });
+});
