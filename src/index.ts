@@ -883,7 +883,7 @@ server.registerTool("get_feature_requests", {
     const warnings: string[] = [];
     for (const client of clients) {
       try {
-        const requests = await client.fetchFeatureRequests(include_comments, status);
+        const requests = await client.fetchFeatureRequests(include_comments, status || undefined);
         allRequests.push(...requests);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
