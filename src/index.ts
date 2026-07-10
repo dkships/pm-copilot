@@ -878,20 +878,27 @@ server.registerTool("get_feature_requests", {
       };
     }
 
-    // Fetch each portal independently — one failing portal becomes a warning
+    // Fetch portals in parallel, each isolated — one failing portal becomes
+    // a warning instead of dropping every portal's data
     const allRequests: FeatureRequest[] = [];
     const warnings: string[] = [];
-    for (const client of clients) {
-      try {
-        const requests = await client.fetchFeatureRequests(include_comments, status || undefined);
-        allRequests.push(...requests);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+    const results = await Promise.allSettled(
+      clients.map((client) =>
+        client.fetchFeatureRequests(include_comments, status || undefined)
+      )
+    );
+    results.forEach((result, i) => {
+      if (result.status === "fulfilled") {
+        allRequests.push(...result.value);
+      } else {
+        const reason = result.reason;
+        const msg = reason instanceof Error ? reason.message : String(reason);
+        const client = clients[i];
         warnings.push(
-          scrubPii(`ProductLift portal "${client.portalName}" fetch failed: ${msg}`).text
+          scrubPii(`ProductLift portal "${client?.portalName}" fetch failed: ${msg}`).text
         );
       }
-    }
+    });
 
     if (allRequests.length === 0 && warnings.length > 0) {
       return {
