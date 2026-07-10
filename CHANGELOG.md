@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- 429 retries in `HelpScoutClient.apiGet` now read the `X-RateLimit-Retry-After` header
+  HelpScout actually sends (per the Mailbox API rate-limiting docs); the code previously
+  looked for standard `Retry-After`, which HelpScout omits, so every 429 fell back to blind
+  exponential backoff. A non-numeric header value also no longer produces a `setTimeout(NaN)`
+  instant retry — it falls back to backoff instead. Standard `Retry-After` is still honoured
+  when present. Covered by a new `src/helpscout.test.ts` suite.
+
+### Changed
+
+- `get_feature_requests` fetches portals in parallel instead of one at a time, matching the
+  `synthesize_feedback` / `generate_product_plan` path. Per-portal failure isolation and
+  warning format are unchanged.
+
 ## [1.3.0] — 2026-07-01
 
 ### Security

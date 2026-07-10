@@ -144,11 +144,17 @@ export class HelpScoutClient {
           `HelpScout rate limit exceeded on ${path} after ${MAX_429_RETRIES} retries`
         );
       }
-      // Honour Retry-After if present, else exponential backoff.
-      const retryAfterHeader = res.headers.get("retry-after");
-      const retryAfterMs = retryAfterHeader
-        ? Number(retryAfterHeader) * 1000
-        : RETRY_BACKOFF_MS * Math.pow(2, retryCount);
+      // Honour the retry-after header if present, else exponential backoff.
+      // HelpScout sends X-RateLimit-Retry-After (not standard Retry-After):
+      // https://developer.helpscout.com/mailbox-api/overview/rate-limiting/
+      const retryAfterHeader =
+        res.headers.get("x-ratelimit-retry-after") ??
+        res.headers.get("retry-after");
+      const retryAfterSecs = Number(retryAfterHeader);
+      const retryAfterMs =
+        retryAfterHeader && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
+          ? retryAfterSecs * 1000
+          : RETRY_BACKOFF_MS * Math.pow(2, retryCount);
       await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
       return this.apiGet(path, params, retryCount + 1);
     }
