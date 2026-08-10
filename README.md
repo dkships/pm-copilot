@@ -4,7 +4,7 @@ An MCP server that triangulates customer support tickets, feature requests, and 
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue?logo=typescript&logoColor=white)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.29.0-green)](#)
+[![MCP SDK](https://img.shields.io/badge/MCP_SDK-1.30.0-green)](#)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-brightgreen?logo=node.js&logoColor=white)](#)
 
 ---
@@ -407,8 +407,12 @@ Customer data flows through PM Copilot on its way to Claude. All text is scrubbe
 
 A chat widget takes unbounded free text, so it is the widest PII surface of the three sources —
 people paste order numbers, addresses and licence keys into a chat box in a way they do not into
-a roadmap post. Two things keep it contained: only `role: "user"` turns are read, and every turn
-goes through the same scrubber as the other sources before it enters the analysis.
+a roadmap post. This is not hypothetical: on a live 30-day run, adding the Chatbase source was
+what first made `credit_card` appear in `pii_categories_redacted`. Tickets and roadmap posts over
+the same window produced only emails and phone numbers.
+
+Two things keep it contained: only `role: "user"` turns are read, and every turn goes through the
+same scrubber as the other sources before it enters the analysis.
 
 Chatbase message attribution is structured, which makes it the cleanest customer-voice source
 of the three. The HelpScout path has to guess at agent text with phrase heuristics because a

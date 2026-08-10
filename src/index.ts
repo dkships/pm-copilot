@@ -104,7 +104,7 @@ function describeAgents(): string {
 
 const server = new McpServer({
   name: "pm-copilot",
-  version: "1.3.0",
+  version: "1.4.0",
 });
 
 // ── Resources ──

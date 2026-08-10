@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-08-10
+
 ### Added
 
 - Chatbase as a third signal class (`src/chatbase.ts`). AI support agent conversations are the
@@ -25,6 +27,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
   server-side by date and paginates by page/size; v2 has no date filter and caps at 20 per page
   behind an opaque cursor. v1 also returns `min_score`, and v2's per-message `feedback` field is
   almost never populated on real widget traffic. Both need a Chatbase Standard plan.
+- Registry publication metadata: `bin` entry, `mcpName`, and a matching `server.json` declaring
+  the HelpScout, ProductLift and Chatbase environment variables.
 
 - Theme-matching eval harness (`npm run eval`, `src/theme-eval.ts`). Multi-label precision,
   recall and F1 per theme, plus a per-register breakdown and a keyword-collision report.
