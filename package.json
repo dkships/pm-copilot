@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tool": "node scripts/call-tool.mjs",
+    "eval": "node scripts/eval-themes.mjs",
     "audit:ci": "npm audit --omit=dev --audit-level=high",
     "prepublishOnly": "npm run build && npm test && npm run audit:ci"
   },

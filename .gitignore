@@ -9,3 +9,6 @@ dist/
 claude-code-notes.md
 moonshot-ideas.md
 blog-draft.md
+# Eval fixtures built from real exports — unscrubbed customer text, never commit
+local/
+evals/*.local.jsonl

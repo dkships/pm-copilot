@@ -224,6 +224,54 @@ Key principles:
 
 The methodology is versioned (v2.1) and served as markdown content via the MCP resource protocol. Every `generate_product_plan` response links to it (`methodology_resource`) and, when `kpi_context` is provided, instructs Claude to apply it — whether it actually gets read depends on the MCP client surfacing resources.
 
+## Evaluation
+
+The scoring formula only matters if the theme matching underneath it is right. `npm run eval` measures that.
+
+### Why keyword matching
+
+Themes are matched with keyword lists (multi-word keywords as substrings, single words on a word boundary), not embeddings or an LLM classifier. That is a deliberate trade-off:
+
+- Customer text never leaves the server for a third-party embedding or classification API. The PII guarantees below only hold because nothing in the matching path makes a network call.
+- The same input always produces the same themes, so a priority ranking can be audited and explained. An LLM classifier would reshuffle rankings between runs.
+- No token cost or latency per data point, which is what makes a 2,000-signal analysis finish in under a minute.
+
+The cost is recall. Keyword lists miss paraphrases, and they miss them unevenly across sources. That is what the eval exists to quantify.
+
+### Running it
+
+```bash
+npm run build && npm run eval
+npm run eval -- --failures        # every miss and false positive
+npm run eval -- --json           # machine-readable report
+npm run eval -- --min-f1 0.60    # non-zero exit below threshold, for CI
+```
+
+Matching is multi-label — one signal can belong to several themes — so the report gives per-theme precision, recall and F1, plus two rates that matter more than the averages: `miss rate` (expected a theme, matched nothing at all) and `false alarm rate` (expected nothing, matched something).
+
+### Baseline
+
+Against the committed fixture (70 hand-labelled examples, themes.config.json v2):
+
+| | precision | recall | F1 | miss rate |
+|---|---:|---:|---:|---:|
+| micro | 88.7% | 68.8% | 77.5% | 25.0% |
+| roadmap register | 92.9% | 78.8% | 85.2% | 9.5% |
+| ticket register | 84.2% | 66.7% | 74.4% | 23.8% |
+| chat register | 86.7% | 56.5% | 68.4% | 40.9% |
+
+Precision holds up across all three registers. Recall does not. Keywords drawn from support tickets and roadmap posts match chat-style phrasing far less often, which is the thing to know before wiring in any conversational source.
+
+Specific failures the eval surfaced, all reproducible with `--failures`:
+
+- Plural coverage is inconsistent. `tier` is listed without `tiers`, and single-word keywords match on a word boundary, so "the tiers" matches nothing.
+- `team` fires on "founding team" and "IT team" — 3 of the 6 false positives in the fixture.
+- `plan` tags "i plan to launch next week" as Account & Licensing.
+- `upgrade` sits in both Billing & Payment and Account & Licensing, so an API ticket mentioning an upgrade lands in both.
+- Multi-word keywords are exact substrings: `cant login` misses "cant log in", `outlook calendar` misses "does this work with outlook".
+
+The committed fixture is synthetic text written to exercise all 16 themes. Treat it as a regression gate, not a measurement of your data. For a real number, export your own signals to a local JSONL in the same shape and pass `--fixture ./local/real.jsonl`. Real fixtures contain customer text — keep them out of git.
+
 ## Security
 
 Customer data flows through PM Copilot on its way to Claude. All text is scrubbed before it enters the analysis pipeline or leaves the server.
@@ -262,6 +310,7 @@ npm run build        # Compile TypeScript
 npm run dev          # Watch mode
 npm start            # Run the server
 npm test             # Run the test suite
+npm run eval         # Theme-matching eval (see Evaluation)
 ```
 
 ### Local testing

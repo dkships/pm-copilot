@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- Theme-matching eval harness (`npm run eval`, `src/theme-eval.ts`). Multi-label precision,
+  recall and F1 per theme, plus a per-register breakdown and a keyword-collision report.
+  Nothing previously measured whether theme assignment was correct — only that the scoring
+  mechanics behaved. Ships with a 70-example hand-labelled fixture in `evals/` as a
+  regression gate; `--fixture` points it at a local export for a real number, and `--min-f1`
+  gives CI a threshold to gate on.
+- README `Evaluation` section recording the v2 config baseline (micro F1 77.5%, recall 68.8%)
+  and stating the reasoning for keyword matching over embeddings or an LLM classifier.
+
 ### Fixed
 
 - 429 retries in `HelpScoutClient.apiGet` now read the `X-RateLimit-Retry-After` header

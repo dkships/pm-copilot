@@ -1,0 +1,70 @@
+{"id":"tk-001","register":"ticket","source":"REACTIVE","text":"Two customers picked the same 3pm slot yesterday and both got confirmations","expected_themes":["booking-scheduling"]}
+{"id":"tk-002","register":"ticket","source":"REACTIVE","text":"Reschedule link in the confirmation goes to a 404","expected_themes":["booking-scheduling","performance"]}
+{"id":"tk-003","register":"ticket","source":"REACTIVE","text":"I was charged twice this month for the same subscription","expected_themes":["billing-payment"]}
+{"id":"tk-004","register":"ticket","source":"REACTIVE","text":"Need a VAT receipt for my purchase last week","expected_themes":["billing-payment"]}
+{"id":"tk-005","register":"ticket","source":"REACTIVE","text":"Confirmation emails are landing in junk for about half our clients","expected_themes":["email-smtp"]}
+{"id":"tk-006","register":"ticket","source":"REACTIVE","text":"Recipients are unsubscribing but still receiving mail from us","expected_themes":["email-smtp"]}
+{"id":"tk-007","register":"ticket","source":"REACTIVE","text":"Not receiving alerts when a form is submitted","expected_themes":["notifications"]}
+{"id":"tk-008","register":"ticket","source":"REACTIVE","text":"Still shows Powered by on my embedded widget after upgrading","expected_themes":["whitelabel-branding"]}
+{"id":"tk-009","register":"ticket","source":"REACTIVE","text":"I bought two lifetime codes and only one of them applied","expected_themes":["account-licensing"]}
+{"id":"tk-010","register":"ticket","source":"REACTIVE","text":"Google Calendar events stopped syncing three days ago","expected_themes":["calendar-sync"]}
+{"id":"tk-011","register":"ticket","source":"REACTIVE","text":"Make.com scenario fails with a 400 every time it runs","expected_themes":["integrations","performance"]}
+{"id":"tk-012","register":"ticket","source":"REACTIVE","text":"My API key stopped working right after the upgrade","expected_themes":["api-webhooks"]}
+{"id":"tk-013","register":"ticket","source":"REACTIVE","text":"The PDF export loses my signature field every time","expected_themes":["templates-editor"]}
+{"id":"tk-014","register":"ticket","source":"REACTIVE","text":"My assistant can see everyone's calendar, she should only see mine","expected_themes":["team-collaboration"]}
+{"id":"tk-015","register":"ticket","source":"REACTIVE","text":"Locked out after too many 2FA attempts, need a reset","expected_themes":["login-auth"]}
+{"id":"tk-016","register":"ticket","source":"REACTIVE","text":"Do you have a DPA we can sign before we roll this out?","expected_themes":["compliance-security"]}
+{"id":"tk-017","register":"ticket","source":"REACTIVE","text":"Custom CSS isn't applying to the widget on our site","expected_themes":["customization"]}
+{"id":"tk-018","register":"ticket","source":"REACTIVE","text":"Booking page is unusable on my phone, buttons overlap","expected_themes":["booking-scheduling","mobile-app"]}
+{"id":"tk-019","register":"ticket","source":"REACTIVE","text":"Dashboard takes 30 seconds to come up every morning","expected_themes":["performance"]}
+{"id":"tk-020","register":"ticket","source":"REACTIVE","text":"Great product, just wanted to say thanks for the quick fix","expected_themes":[]}
+{"id":"tk-021","register":"ticket","source":"REACTIVE","text":"Can I get a call with someone on your founding team?","expected_themes":[]}
+{"id":"tk-022","register":"ticket","source":"REACTIVE","text":"After the timezone change all my recurring slots shifted an hour","expected_themes":["booking-scheduling"]}
+{"id":"tk-023","register":"ticket","source":"REACTIVE","text":"Zoom links are not being generated for new meetings","expected_themes":["calendar-sync"]}
+{"id":"rm-001","register":"roadmap","source":"PROACTIVE","text":"Allow buffer time between appointments so back-to-back calls stop overlapping","expected_themes":["booking-scheduling"]}
+{"id":"rm-002","register":"roadmap","source":"PROACTIVE","text":"Support annual prepay against a purchase order for enterprise buyers","expected_themes":["billing-payment"]}
+{"id":"rm-003","register":"roadmap","source":"PROACTIVE","text":"Let me customise the reminder email copy per booking type","expected_themes":["email-smtp","notifications","customization","booking-scheduling"]}
+{"id":"rm-004","register":"roadmap","source":"PROACTIVE","text":"WhatsApp reminders for appointments, SMS is too expensive for us","expected_themes":["notifications","booking-scheduling"]}
+{"id":"rm-005","register":"roadmap","source":"PROACTIVE","text":"CNAME support so the booking page sits on our own domain","expected_themes":["whitelabel-branding","booking-scheduling"]}
+{"id":"rm-006","register":"roadmap","source":"PROACTIVE","text":"Let agencies buy extra seats without moving to a new plan","expected_themes":["account-licensing","team-collaboration"]}
+{"id":"rm-007","register":"roadmap","source":"PROACTIVE","text":"Two-way sync with CalDAV for those of us not on Google","expected_themes":["calendar-sync"]}
+{"id":"rm-008","register":"roadmap","source":"PROACTIVE","text":"Zapier trigger that fires on new bookings","expected_themes":["integrations","booking-scheduling"]}
+{"id":"rm-009","register":"roadmap","source":"PROACTIVE","text":"Webhook on booking cancellation so we can update our CRM","expected_themes":["api-webhooks","booking-scheduling","integrations"]}
+{"id":"rm-010","register":"roadmap","source":"PROACTIVE","text":"Duplicate a template instead of rebuilding it from scratch","expected_themes":["templates-editor"]}
+{"id":"rm-011","register":"roadmap","source":"PROACTIVE","text":"Round robin assignment across staff based on who has capacity","expected_themes":["team-collaboration"]}
+{"id":"rm-012","register":"roadmap","source":"PROACTIVE","text":"SSO with Okta, our IT team will not approve us otherwise","expected_themes":["login-auth"]}
+{"id":"rm-013","register":"roadmap","source":"PROACTIVE","text":"HIPAA-compliant intake so clinics can actually use this","expected_themes":["compliance-security"]}
+{"id":"rm-014","register":"roadmap","source":"PROACTIVE","text":"Redirect URL after form submit, we want people on our thank you page","expected_themes":["customization"]}
+{"id":"rm-015","register":"roadmap","source":"PROACTIVE","text":"Native iOS app, the web version is painful on a small screen","expected_themes":["mobile-app"]}
+{"id":"rm-016","register":"roadmap","source":"PROACTIVE","text":"Fix the timeout on large exports, anything over 2000 rows dies","expected_themes":["performance"]}
+{"id":"rm-017","register":"roadmap","source":"PROACTIVE","text":"Bring your own SMTP so email comes from our own servers","expected_themes":["email-smtp"]}
+{"id":"rm-018","register":"roadmap","source":"PROACTIVE","text":"Please keep up the good work, this has saved us hours","expected_themes":[]}
+{"id":"rm-019","register":"roadmap","source":"PROACTIVE","text":"An audit trail of who changed what and when","expected_themes":["compliance-security"]}
+{"id":"rm-020","register":"roadmap","source":"PROACTIVE","text":"Remove the logo entirely on the agency tier","expected_themes":["whitelabel-branding","account-licensing"]}
+{"id":"rm-021","register":"roadmap","source":"PROACTIVE","text":"Dark mode for the editor, staring at white all day is rough","expected_themes":["customization","templates-editor"]}
+{"id":"rm-022","register":"roadmap","source":"PROACTIVE","text":"Let clients pay a deposit when they book rather than the full amount","expected_themes":["billing-payment","booking-scheduling"]}
+{"id":"ch-001","register":"chat","source":"REACTIVE","text":"how do i stop people booking on weekends","expected_themes":["booking-scheduling"]}
+{"id":"ch-002","register":"chat","source":"REACTIVE","text":"why did you take money out of my account twice","expected_themes":["billing-payment"]}
+{"id":"ch-003","register":"chat","source":"REACTIVE","text":"can i use my own smtp","expected_themes":["email-smtp"]}
+{"id":"ch-004","register":"chat","source":"REACTIVE","text":"do i get a text when someone books","expected_themes":["notifications"]}
+{"id":"ch-005","register":"chat","source":"REACTIVE","text":"how do i put my own logo on it","expected_themes":["whitelabel-branding"]}
+{"id":"ch-006","register":"chat","source":"REACTIVE","text":"whats the difference between the tiers","expected_themes":["account-licensing"]}
+{"id":"ch-007","register":"chat","source":"REACTIVE","text":"does this work with outlook","expected_themes":["calendar-sync"]}
+{"id":"ch-008","register":"chat","source":"REACTIVE","text":"can this connect to hubspot","expected_themes":["integrations"]}
+{"id":"ch-009","register":"chat","source":"REACTIVE","text":"is there an api","expected_themes":["api-webhooks"]}
+{"id":"ch-010","register":"chat","source":"REACTIVE","text":"how do i add a dropdown to the form","expected_themes":["templates-editor"]}
+{"id":"ch-011","register":"chat","source":"REACTIVE","text":"how many users can i add","expected_themes":["team-collaboration"]}
+{"id":"ch-012","register":"chat","source":"REACTIVE","text":"cant log in","expected_themes":["login-auth"]}
+{"id":"ch-013","register":"chat","source":"REACTIVE","text":"where is my data stored","expected_themes":["compliance-security"]}
+{"id":"ch-014","register":"chat","source":"REACTIVE","text":"can i change the colours","expected_themes":["customization"]}
+{"id":"ch-015","register":"chat","source":"REACTIVE","text":"is there an app for my phone","expected_themes":["mobile-app"]}
+{"id":"ch-016","register":"chat","source":"REACTIVE","text":"site is really slow today","expected_themes":["performance"]}
+{"id":"ch-017","register":"chat","source":"REACTIVE","text":"my booking page is broken","expected_themes":["booking-scheduling","performance"]}
+{"id":"ch-018","register":"chat","source":"REACTIVE","text":"need refund","expected_themes":["billing-payment"]}
+{"id":"ch-019","register":"chat","source":"REACTIVE","text":"thanks that worked","expected_themes":[]}
+{"id":"ch-020","register":"chat","source":"REACTIVE","text":"hi","expected_themes":[]}
+{"id":"ch-021","register":"chat","source":"REACTIVE","text":"i plan to launch next week any tips","expected_themes":[]}
+{"id":"ch-022","register":"chat","source":"REACTIVE","text":"forgot my password","expected_themes":["login-auth"]}
+{"id":"ch-023","register":"chat","source":"REACTIVE","text":"how do i sync my google calendar","expected_themes":["calendar-sync"]}
+{"id":"ch-024","register":"chat","source":"REACTIVE","text":"do you have a mobile app","expected_themes":["mobile-app"]}
+{"id":"ch-025","register":"chat","source":"REACTIVE","text":"where do i download my invoice","expected_themes":["billing-payment"]}

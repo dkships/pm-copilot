@@ -10,6 +10,7 @@ npm run dev         # Watch mode
 npm test            # Vitest unit tests
 npm start           # Run the server
 npm run tool -- <tool_name> '<json-params>'  # Call one tool directly, no MCP client (use --list to enumerate)
+npm run eval        # Theme-matching precision/recall (--failures, --json, --fixture, --min-f1)
 npm run audit:ci    # Dependency audit gate (prepublishOnly runs build + test + this)
 ```
 
