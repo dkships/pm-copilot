@@ -68,14 +68,14 @@
 {"id":"ch-023","register":"chat","source":"REACTIVE","text":"how do i sync my google calendar","expected_themes":["calendar-sync"]}
 {"id":"ch-024","register":"chat","source":"REACTIVE","text":"do you have a mobile app","expected_themes":["mobile-app"]}
 {"id":"ch-025","register":"chat","source":"REACTIVE","text":"where do i download my invoice","expected_themes":["billing-payment"]}
-{"id":"gw-001","register":"chat","source":"REACTIVE","text":"i entered a giveaway how do i know if i won","expected_themes":["giveaways-contests"]}
-{"id":"gw-002","register":"chat","source":"REACTIVE","text":"how do i pick winner","expected_themes":["giveaways-contests"]}
-{"id":"gw-003","register":"chat","source":"REACTIVE","text":"how to give extra entries for referring someone","expected_themes":["giveaways-contests"]}
+{"id":"gw-001","register":"chat","source":"REACTIVE","text":"entered the prize draw last week, how do i find out the result","expected_themes":["giveaways-contests"]}
+{"id":"gw-002","register":"chat","source":"REACTIVE","text":"where do i select the winner for my contest","expected_themes":["giveaways-contests"]}
+{"id":"gw-003","register":"chat","source":"REACTIVE","text":"can entrants earn bonus entries for sharing","expected_themes":["giveaways-contests"]}
 {"id":"gw-004","register":"ticket","source":"REACTIVE","text":"The prize draw closed but no winner was announced","expected_themes":["giveaways-contests"]}
 {"id":"gw-005","register":"roadmap","source":"PROACTIVE","text":"Let us run a contest with weighted entries per referral","expected_themes":["giveaways-contests"]}
-{"id":"gw-006","register":"chat","source":"REACTIVE","text":"can i choose who i award","expected_themes":["giveaways-contests"]}
-{"id":"lm-001","register":"chat","source":"REACTIVE","text":"how many contacts does pro allow","expected_themes":["list-management","account-licensing"]}
-{"id":"lm-002","register":"chat","source":"REACTIVE","text":"how can i quickly add lists of people","expected_themes":["list-management"]}
+{"id":"gw-006","register":"chat","source":"REACTIVE","text":"am i able to award the prize manually","expected_themes":["giveaways-contests"]}
+{"id":"lm-001","register":"chat","source":"REACTIVE","text":"does the higher plan raise my subscriber cap","expected_themes":["list-management","account-licensing"]}
+{"id":"lm-002","register":"chat","source":"REACTIVE","text":"fastest way to bulk import a few thousand contacts","expected_themes":["list-management"]}
 {"id":"lm-003","register":"ticket","source":"REACTIVE","text":"Importing a CSV silently dropped half my subscribers","expected_themes":["list-management"]}
 {"id":"lm-004","register":"roadmap","source":"PROACTIVE","text":"Segment my audience by tag so I can send to a subset","expected_themes":["list-management"]}
 {"id":"lm-005","register":"chat","source":"REACTIVE","text":"i have duplicate contacts in my list","expected_themes":["list-management"]}

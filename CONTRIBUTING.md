@@ -56,6 +56,6 @@ No "feat:" / "fix:" prefixes required.
 
 ## Reporting bugs
 
-Open an issue with: what you ran, what you expected, what happened, and the version (`npm ls @dkships/pm-copilot`). Redact any credentials or customer data before posting.
+Open an issue with: what you ran, what you expected, what happened, and the version (the `version` from `package.json`, or the commit SHA you built from). Redact any credentials or customer data before posting.
 
 For security issues, see [SECURITY.md](SECURITY.md) — please do not open a public issue.

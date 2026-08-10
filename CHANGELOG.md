@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Fixed
+
+- Six lines in `evals/theme-matching.jsonl` were verbatim or near-verbatim real customer chat
+  messages rather than the synthetic text the fixture is documented to contain. They carried no
+  PII — short product questions, no names, addresses or identifiers — but real customer wording
+  does not belong in a public fixture. Replaced with invented phrasings that exercise the same
+  keywords; both new themes still score 100% and micro F1 is unchanged at 0.974.
+- `server.json` declared an `@dkships/pm-copilot` npm package that does not exist and is not
+  planned. The `packages` block is removed; the manifest now describes the server without
+  claiming a distribution channel. Distribution is the GitHub release plus clone-and-build.
+- The bug-report template and CONTRIBUTING asked reporters for `npm ls @dkships/pm-copilot`,
+  which cannot work for a clone-and-build install. Both now ask for the `package.json` version or
+  the commit SHA.
+
 ## [1.4.0] — 2026-08-10
 
 ### Added
