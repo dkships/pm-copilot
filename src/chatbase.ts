@@ -35,6 +35,35 @@ export const CHATBASE_CONVERSATION_SOURCES = [
   "Widget or Iframe",
 ] as const;
 
+/**
+ * Normalize a user-supplied source filter: split on commas, trim each token,
+ * and canonicalize casing against CHATBASE_CONVERSATION_SOURCES ("whatsapp" →
+ * "WhatsApp"). Tokens the list does not cover — "Playground", "unknown", typos —
+ * are kept as typed, since the API may accept values the list has not caught up
+ * with, and reported back so the caller can warn instead of letting a wrong
+ * value silently match zero conversations.
+ */
+export function normalizeSourceFilter(filter: string): {
+  filter: string;
+  unknown: string[];
+} {
+  const canonical = new Map(
+    CHATBASE_CONVERSATION_SOURCES.map((s) => [s.toLowerCase(), s] as const)
+  );
+  const unknown: string[] = [];
+  const normalized = filter
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0)
+    .map((t) => {
+      const match = canonical.get(t.toLowerCase());
+      if (match) return match;
+      unknown.push(t);
+      return t;
+    });
+  return { filter: normalized.join(","), unknown };
+}
+
 export interface AgentConfig {
   name: string;
   agentId: string;

@@ -112,7 +112,7 @@ Cross-references HelpScout tickets, ProductLift feature requests, and Chatbase c
 | `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
 | `agent_name` | string | — | Chatbase agent filter. Run `list_sources` to see names |
-| `source_filter` | string | — | Chatbase conversation source filter, e.g. `Widget or Iframe`, `WhatsApp`, `API`. Run `list_sources` for the valid values |
+| `source_filter` | string | — | Chatbase conversation source filter, comma-separated for multiple, e.g. `Widget or Iframe` or `WhatsApp,API`. Case-insensitive. Run `list_sources` for the valid values |
 | `detail_level` | string | `"summary"` | `"summary"`, `"standard"`, or `"full"`. Output size scales with data volume — roughly 20KB / 100KB / 600KB |
 
 Returns themes sorted by priority score, each with reactive/proactive counts, convergence flag, evidence summaries, and representative customer quotes.
@@ -129,7 +129,7 @@ Builds a prioritized product plan with evidence and customer quotes. Accepts ext
 | `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
 | `agent_name` | string | — | Chatbase agent filter. Run `list_sources` to see names |
-| `source_filter` | string | — | Chatbase conversation source filter, e.g. `Widget or Iframe`, `WhatsApp`, `API`. Run `list_sources` for the valid values |
+| `source_filter` | string | — | Chatbase conversation source filter, comma-separated for multiple, e.g. `Widget or Iframe` or `WhatsApp,API`. Case-insensitive. Run `list_sources` for the valid values |
 | `kpi_context` | string | — | Business metrics from other MCP servers |
 | `max_priorities` | number | 5 | Number of priorities to return (1-10) |
 | `preview_only` | boolean | false | Audit mode: show what data *would* be sent |
@@ -181,7 +181,11 @@ priority score.
 
 Conversations arrive from several channels (widget, WhatsApp, Messenger, API, …). The analysis
 reports a `chatbase_sources` count per channel, and the `source_filter` parameter narrows a run
-to one channel — the filter is applied server-side by Chatbase.
+to one or more channels (comma-separated) — the filter is applied server-side by Chatbase. One
+catch: counts can include channels the filter list does not cover, like `Playground` or
+`unknown` (Chatbase omitted the source). A filter value outside the known list is passed
+through with a warning rather than rejected, since zero matches usually means the value is
+wrong, not that the channel went quiet.
 
 Chatbase is optional. With no `CHATBASE_API_KEY` set, the deflection fields are simply absent
 and the analysis behaves exactly as before.

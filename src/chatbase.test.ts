@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ChatbaseClient, parseAgentConfigs } from "./chatbase.js";
+import { ChatbaseClient, parseAgentConfigs, normalizeSourceFilter } from "./chatbase.js";
 
 const AGENT = { name: "portal-a", agentId: "abc123" };
 
@@ -62,6 +62,29 @@ describe("parseAgentConfigs", () => {
     process.env.CHATBASE_AGENTS = "portal-a|abc123";
     process.env.CHATBASE_AGENT_ID = "ignored";
     expect(parseAgentConfigs()).toEqual([{ name: "portal-a", agentId: "abc123" }]);
+  });
+});
+
+describe("normalizeSourceFilter", () => {
+  it("trims tokens and canonicalizes case against the known source list", () => {
+    expect(normalizeSourceFilter("whatsapp, widget or iframe")).toEqual({
+      filter: "WhatsApp,Widget or Iframe",
+      unknown: [],
+    });
+  });
+
+  it("keeps unknown tokens as typed and reports them", () => {
+    expect(normalizeSourceFilter("Playground,API")).toEqual({
+      filter: "Playground,API",
+      unknown: ["Playground"],
+    });
+  });
+
+  it("drops empty tokens from a sloppy comma list", () => {
+    expect(normalizeSourceFilter("API,,Slack,")).toEqual({
+      filter: "API,Slack",
+      unknown: [],
+    });
   });
 });
 
