@@ -1,9 +1,13 @@
 {
   "name": "@dkships/pm-copilot",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "MCP server that triangulates customer support tickets and feature requests to help PMs decide what to build next",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "pm-copilot": "dist/index.js"
+  },
+  "mcpName": "io.github.dkships/pm-copilot",
   "files": [
     "dist",
     "themes.config.json",
@@ -22,6 +26,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tool": "node scripts/call-tool.mjs",
+    "eval": "node scripts/eval-themes.mjs",
     "audit:ci": "npm audit --omit=dev --audit-level=high",
     "prepublishOnly": "npm run build && npm test && npm run audit:ci"
   },

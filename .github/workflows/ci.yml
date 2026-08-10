@@ -38,5 +38,8 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Theme-matching eval
+        run: npm run eval -- --min-f1 0.90
+
       - name: npm audit (high+)
         run: npm run audit:ci

@@ -4,8 +4,72 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-08-10
+
+### Added
+
+- Chatbase as a third signal class (`src/chatbase.ts`). AI support agent conversations are the
+  deflection signal: questions the bot answers never become tickets, so ticket-based
+  prioritization undercounts every theme the bot handles, and the gap widens as the bot
+  improves. Measured on four AppSumo Originals agents over 30 days — 1,394 conversations
+  against 1,678 tickets in the same window, so roughly 83% of the ticket channel was invisible
+  to the analysis.
+- `SignalType` gains `DEFLECTED`. Deflected signals count toward the frequency term and add
+  three per-theme fields (`deflected_count`, `self_serve_failure_rate`, `mean_answer_confidence`),
+  but do not enter the severity or vote-momentum terms and do not trigger the 2x convergence
+  boost. The scoring formula and methodology version are unchanged: Chatbase does not document
+  what its `min_score` field measures, so it is reported as evidence rather than folded into a
+  score.
+- `agent_name` filter on `synthesize_feedback` and `generate_product_plan`; Chatbase agents
+  listed by `list_sources`; a `chatbase` block in `generate_product_plan`'s `preview_only`
+  output naming exactly which fields are and are not sent.
+- Uses the v1 `/get-conversations` endpoint, not v2 `/conversations/export`. v1 filters
+  server-side by date and paginates by page/size; v2 has no date filter and caps at 20 per page
+  behind an opaque cursor. v1 also returns `min_score`, and v2's per-message `feedback` field is
+  almost never populated on real widget traffic. Both need a Chatbase Standard plan.
+- Registry publication metadata: `bin` entry, `mcpName`, and a matching `server.json` declaring
+  the HelpScout, ProductLift and Chatbase environment variables.
+
+- Theme-matching eval harness (`npm run eval`, `src/theme-eval.ts`). Multi-label precision,
+  recall and F1 per theme, plus a per-register breakdown and a keyword-collision report.
+  Nothing previously measured whether theme assignment was correct — only that the scoring
+  mechanics behaved. Ships with a 70-example hand-labelled fixture in `evals/` as a
+  regression gate; `--fixture` points it at a local export for a real number, and `--min-f1`
+  gives CI a threshold to gate on.
+- README `Evaluation` section recording the v2 config baseline (micro F1 77.5%, recall 68.8%)
+  and stating the reasoning for keyword matching over embeddings or an LLM classifier.
+
+### Changed
+
+- `themes.config.json` v2 → v3. Two new themes derived from real unmatched conversations —
+  Giveaways & Contests and List & Contact Management — taking the config to 18 themes across 12
+  categories. Over-generic keywords scoped (`team` → `my team` / `our team` / `teams` /
+  `team member` / `team access`; bare `agency`, `form` and `duplicate` removed), duplicated
+  keywords assigned to a single theme (`upgrade`/`downgrade` to Account & Licensing, `two factor`
+  to Login & Auth), and missing variants added across 13 themes.
+- Measured on 1,100 held-out chat conversations from a window the new themes were not derived
+  from: unmatched fell from 39.9% to 33.1%. Per product — KingSumo 66.7% → 34.8%,
+  SendFox 58.4% → 48.5%, BreezeDoc 25.9% → 23.7%, TidyCal 20.5% → 19.3%.
+- Eval CI floor raised from `--min-f1 0.60` to `0.90` now that the fixture gate is meaningful, and
+  the eval runs as a CI step so a config edit that drops matching quality fails the build.
+
+### Security
+
+- `npm audit fix` cleared the two high-severity transitive advisories that were failing
+  `audit:ci` (`fast-uri` GHSA-v2hh-gcrm-f6hx and related, `ip-address`), plus the remaining
+  moderate and low findings. Lockfile-only — no direct dependency ranges changed, and
+  `@modelcontextprotocol/sdk` stays within `^1.29.0` at 1.30.0.
+
 ### Fixed
 
+- Single-word theme keywords now match a regular plural suffix (`\b<kw>(?:e?s)?\b`). Previously
+  `plan` missed "plans" and `tier` missed "tiers", and the config listed plurals only where
+  someone had thought of it. On live data this was costly: the recurring widget prompt "what are
+  your plans and prices?" matched no theme at all. Irregular plurals still need listing —
+  `entry`/`entries` is why the giveaways theme carries both.
+- `buildEvidenceSummary` produced `NaN signals` for a `ThemeMatch` without a `deflected_count`.
+  The count is now treated as absent rather than added blindly, so an analysis produced before
+  the Chatbase source existed still summarises cleanly.
 - 429 retries in `HelpScoutClient.apiGet` now read the `X-RateLimit-Retry-After` header
   HelpScout actually sends (per the Mailbox API rate-limiting docs); the code previously
   looked for standard `Retry-After`, which HelpScout omits, so every 429 fell back to blind

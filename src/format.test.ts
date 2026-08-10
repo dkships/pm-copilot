@@ -68,11 +68,14 @@ function theme(overrides: Partial<ThemeMatch> = {}): ThemeMatch {
     category: "billing",
     reactive_count: 1,
     proactive_count: 1,
+    deflected_count: 0,
     convergent: true,
     frequency_score: 100,
     severity_score: 50,
     vote_momentum_score: 80,
     priority_score: 150.5,
+    self_serve_failure_rate: null,
+    mean_answer_confidence: null,
     data_points: [
       { id: "hs-1", source: "REACTIVE", title: "Billing question" },
       { id: "pl-a", source: "PROACTIVE", title: "CSV export" },
@@ -88,6 +91,7 @@ function analysis(overrides: Partial<AnalysisResult> = {}): AnalysisResult {
     total_data_points: 2,
     reactive_count: 1,
     proactive_count: 1,
+    deflected_count: 0,
     themes: [theme()],
     emerging_themes: [
       {
