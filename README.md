@@ -253,11 +253,11 @@ PM Copilot is designed to work alongside other MCP servers. Here's a worked exam
 
 | # | Theme | Score | Tickets | Feature Requests | Chats | Self-serve fail | Signal |
 |---|-------|------:|--------:|-----------------:|------:|----------------:|--------|
-| 1 | Billing & Payment | 91.1 | 2,336 | 20 | 187 | 53% | Convergent |
-| 2 | Booking & Scheduling | 87.1 | 682 | 74 | 347 | 48% | Convergent |
-| 3 | Account & Licensing | 69.7 | 1,955 | 8 | 343 | 40% | Convergent |
-| 4 | Team & Collaboration | 64.4 | 1,875 | 19 | 69 | 49% | Convergent |
-| 5 | Whitelabel & Branding | 50.2 | 92 | 30 | 103 | 46% | Convergent |
+| 1 | Billing & Payment | 91.1 | 2,336 | 20 | 240 | 55% | Convergent |
+| 2 | Booking & Scheduling | 87.1 | 682 | 74 | 310 | 45% | Convergent |
+| 3 | Account & Licensing | 69.7 | 1,955 | 8 | 180 | 38% | Convergent |
+| 4 | Team & Collaboration | 64.4 | 1,875 | 19 | 60 | 50% | Convergent |
+| 5 | Whitelabel & Branding | 50.2 | 92 | 30 | 95 | 42% | Convergent |
 
 **Step 3: Business metrics from dashboards arrive as `kpi_context`**
 
