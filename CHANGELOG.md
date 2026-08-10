@@ -4,8 +4,20 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-08-10
+
+A privacy and accuracy patch. No functional change — build, tests, eval and audit are identical to
+1.4.0. Released as its own version so the source tarball people download matches the repo's
+de-identification policy, rather than moving the 1.4.0 tag.
+
 ### Fixed
 
+- Restored the de-identification policy recorded in the 1.2.0 entry below. The 1.4.0 docs had
+  reversed it: the README carried a per-product results table naming four real products with
+  their conversation volumes and unmatched rates, this changelog named the client outright, and
+  test fixtures used real product names as example agent names. Products are now `Product A`–`D`,
+  the client is unnamed, and example agents are `portal-a` / `portal-b`. Aggregate figures remain,
+  which the policy always allowed — it was the named per-product attribution that did not belong.
 - Six lines in `evals/theme-matching.jsonl` were verbatim or near-verbatim real customer chat
   messages rather than the synthetic text the fixture is documented to contain. They carried no
   PII — short product questions, no names, addresses or identifiers — but real customer wording
@@ -17,6 +29,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - The bug-report template and CONTRIBUTING asked reporters for `npm ls @dkships/pm-copilot`,
   which cannot work for a clone-and-build install. Both now ask for the `package.json` version or
   the commit SHA.
+- The Chats and Self-serve fail columns added to the README composability table held real measured
+  values inside a table the caption describes as illustrative. Now genuinely illustrative.
 
 ## [1.4.0] — 2026-08-10
 
