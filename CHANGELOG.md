@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Changed
+
+- **TypeScript 6.0.3 → 7.0.2** (#28), **`@types/node` 25.9.1 → 26.2.0** (#32), and
+  **`actions/setup-node` 6 → 7** (#30). Three major bumps, no source changes needed for any of
+  them. Verified together before merging, not just individually: `tsc --noEmit` clean, build
+  clean, 124 tests, theme-matching eval at micro F1 0.974, `npm audit` clean, and a live
+  `list_sources` call returning the expected sources. Emitted `dist/index.js` is byte-comparable.
+- Two caveats on what that green covers, both pre-existing rather than introduced here.
+  `skipLibCheck: true` means type problems inside `node_modules` are suppressed, so the clean
+  typecheck speaks for this repo's code and not for its dependencies' type definitions. And
+  `tsconfig.json` excludes `src/**/*.test.ts` while vitest strips types without checking them, so
+  the test files are never typechecked at all — the passing suite proves runtime behaviour under
+  TypeScript 7, not type correctness of the tests.
+
 ## [1.4.1] — 2026-08-10
 
 A privacy and accuracy patch. No functional change — build, tests, eval and audit are identical to
