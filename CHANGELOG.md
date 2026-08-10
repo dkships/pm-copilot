@@ -35,8 +35,26 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - README `Evaluation` section recording the v2 config baseline (micro F1 77.5%, recall 68.8%)
   and stating the reasoning for keyword matching over embeddings or an LLM classifier.
 
+### Changed
+
+- `themes.config.json` v2 → v3. Two new themes derived from real unmatched conversations —
+  Giveaways & Contests and List & Contact Management — taking the config to 18 themes across 12
+  categories. Over-generic keywords scoped (`team` → `my team` / `our team` / `teams` /
+  `team member` / `team access`; bare `agency`, `form` and `duplicate` removed), duplicated
+  keywords assigned to a single theme (`upgrade`/`downgrade` to Account & Licensing, `two factor`
+  to Login & Auth), and missing variants added across 13 themes.
+- Measured on 1,100 held-out chat conversations from a window the new themes were not derived
+  from: unmatched fell from 39.9% to 33.1%. Per product — KingSumo 66.7% → 34.8%,
+  SendFox 58.4% → 48.5%, BreezeDoc 25.9% → 23.7%, TidyCal 20.5% → 19.3%.
+- Eval CI floor raised from `--min-f1 0.60` to `0.90` now that the fixture gate is meaningful.
+
 ### Fixed
 
+- Single-word theme keywords now match a regular plural suffix (`\b<kw>(?:e?s)?\b`). Previously
+  `plan` missed "plans" and `tier` missed "tiers", and the config listed plurals only where
+  someone had thought of it. On live data this was costly: the recurring widget prompt "what are
+  your plans and prices?" matched no theme at all. Irregular plurals still need listing —
+  `entry`/`entries` is why the giveaways theme carries both.
 - `buildEvidenceSummary` produced `NaN signals` for a `ThemeMatch` without a `deflected_count`.
   The count is now treated as absent rather than added blindly, so an analysis produced before
   the Chatbase source existed still summarises cleanly.

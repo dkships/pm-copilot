@@ -284,13 +284,17 @@ The scoring formula only matters if the theme matching underneath it is right. `
 
 ### Why keyword matching
 
-Themes are matched with keyword lists (multi-word keywords as substrings, single words on a word boundary), not embeddings or an LLM classifier. That is a deliberate trade-off:
+Themes are matched with keyword lists — multi-word keywords as substrings, single words on a
+word boundary with an optional regular plural suffix — not embeddings or an LLM classifier. That
+is a deliberate trade-off:
 
 - Customer text never leaves the server for a third-party embedding or classification API. The PII guarantees below only hold because nothing in the matching path makes a network call.
 - The same input always produces the same themes, so a priority ranking can be audited and explained. An LLM classifier would reshuffle rankings between runs.
 - No token cost or latency per data point, which is what makes a 2,000-signal analysis finish in under a minute.
 
-The cost is recall. Keyword lists miss paraphrases, and they miss them unevenly across sources. That is what the eval exists to quantify.
+The cost is recall. Keyword lists miss paraphrases, and they miss them unevenly across products.
+On held-out live chat data a third of conversations still match no theme. That is what the eval
+exists to quantify, and why the number is published rather than hidden.
 
 ### Running it
 
@@ -298,33 +302,78 @@ The cost is recall. Keyword lists miss paraphrases, and they miss them unevenly 
 npm run build && npm run eval
 npm run eval -- --failures        # every miss and false positive
 npm run eval -- --json           # machine-readable report
-npm run eval -- --min-f1 0.60    # non-zero exit below threshold, for CI
+npm run eval -- --min-f1 0.90    # non-zero exit below threshold, for CI
 ```
 
 Matching is multi-label — one signal can belong to several themes — so the report gives per-theme precision, recall and F1, plus two rates that matter more than the averages: `miss rate` (expected a theme, matched nothing at all) and `false alarm rate` (expected nothing, matched something).
 
+### What the first run found
+
+The eval's first job was auditing the v2 config, and it found five real defects:
+
+- Plural coverage was inconsistent. `tier` was listed without `tiers`, and single-word keywords
+  matched on a bare word boundary, so "the tiers" matched nothing. On live chat data this was the
+  expensive one — a recurring widget prompt, "what are your plans and prices?", matched no theme
+  at all, because `plan` misses "plans" and `pricing` misses "prices".
+- `team` fired on "founding team" and "IT team" — half the false positives in the fixture.
+- `plan` tagged "i plan to launch next week" as Account & Licensing.
+- `upgrade` sat in both Billing & Payment and Account & Licensing, so an API ticket mentioning an
+  upgrade landed in both.
+- Multi-word keywords are exact substrings, so `cant login` missed "cant log in" and
+  `outlook calendar` missed "does this work with outlook".
+
+All five are fixed in v3: single-word keywords now match an optional regular plural suffix,
+over-generic keywords were scoped (`team` → `my team` / `team member` / `teams`), duplicated
+keywords were assigned to one theme, and the missing variants were added. Two new themes came out
+of real unmatched conversations — Giveaways & Contests and List & Contact Management — which the
+config had no vocabulary for at all.
+
 ### Baseline
 
-Against the committed fixture (70 hand-labelled examples, themes.config.json v2):
+Two numbers, because they measure different things.
 
-| | precision | recall | F1 | miss rate |
+Against the committed fixture (82 hand-labelled examples):
+
+| config | precision | recall | F1 | miss rate |
 |---|---:|---:|---:|---:|
-| micro | 88.7% | 68.8% | 77.5% | 25.0% |
-| roadmap register | 92.9% | 78.8% | 85.2% | 9.5% |
-| ticket register | 84.2% | 66.7% | 74.4% | 23.8% |
-| chat register | 86.7% | 56.5% | 68.4% | 40.9% |
+| v2 | 88.7% | 68.8% | 77.5% | 25.0% |
+| v3 | 95.8% | 96.8% | 96.3% | 2.6% |
 
-Precision holds up across all three registers. Recall does not. Keywords drawn from support tickets and roadmap posts match chat-style phrasing far less often, which is the thing to know before wiring in any conversational source.
+**Treat that with suspicion.** The config was iterated against this fixture, so the v3 figure is
+in-sample and flatters itself. It is a regression gate — it tells you a change broke something,
+not how well matching works.
 
-Specific failures the eval surfaced, all reproducible with `--failures`:
+The number that means something is held-out real data. 1,100 chat conversations across four
+products, from a 30-day window *before* the one the new themes were derived from:
 
-- Plural coverage is inconsistent. `tier` is listed without `tiers`, and single-word keywords match on a word boundary, so "the tiers" matches nothing.
-- `team` fires on "founding team" and "IT team" — 3 of the 6 false positives in the fixture.
-- `plan` tags "i plan to launch next week" as Account & Licensing.
-- `upgrade` sits in both Billing & Payment and Account & Licensing, so an API ticket mentioning an upgrade lands in both.
-- Multi-word keywords are exact substrings: `cant login` misses "cant log in", `outlook calendar` misses "does this work with outlook".
+| product | conversations | v2 unmatched | v3 unmatched | change |
+|---------|--------------:|-------------:|-------------:|-------:|
+| TidyCal | 435 | 20.5% | 19.3% | −1.1pp |
+| SendFox | 464 | 58.4% | 48.5% | −9.9pp |
+| BreezeDoc | 135 | 25.9% | 23.7% | −2.2pp |
+| KingSumo | 66 | 66.7% | 34.8% | −31.8pp |
+| **all** | **1,100** | **39.9%** | **33.1%** | **−6.8pp** |
 
-The committed fixture is synthetic text written to exercise all 16 themes. Treat it as a regression gate, not a measurement of your data. For a real number, export your own signals to a local JSONL in the same shape and pass `--fixture ./local/real.jsonl`. Real fixtures contain customer text — keep them out of git.
+The gains land where the theory said they would: the products whose vocabulary the config never
+covered. A third of conversations still match nothing, so there is plenty left.
+
+Register turned out to matter less than product coverage. TidyCal chat is *better* matched than
+tickets are, so chat phrasing on its own is not the problem — missing product vocabulary is, and
+per-product chat agents expose that where a shared support mailbox averages it away.
+
+### Known limits
+
+- **Canned widget prompts inflate counts.** Preset buttons like "I entered a giveaway — how do I
+  know if I won?" recur verbatim dozens of times. They are not deduplicated, and that is
+  deliberate: twenty people clicking a preset is twenty people with that question. It does mean
+  volume for a theme with a popular preset is not comparable to volume for one without.
+- **Matching is English-only.** Live data includes German, Spanish and Italian conversations,
+  and all of them land in `unmatched`.
+- **Irregular plurals still need listing.** The suffix rule covers `plan`/`plans`, not
+  `entry`/`entries`.
+
+For a number from your own data, export signals to a local JSONL in the fixture's shape and pass
+`--fixture ./local/real.jsonl`. Real fixtures contain customer text — keep them out of git.
 
 ## Security
 
@@ -402,7 +451,10 @@ names/URLs (and PII-scrubbed customer text) — redact before sharing.
 
 `themes.config.json` in the project root defines what themes to look for. Edit without rebuilding — loaded at runtime.
 
-Ships with 16 data-driven themes across 11 categories. Add your own by appending to the `themes` array. Unmatched data points are analyzed for emerging patterns using bigram/trigram frequency detection.
+Ships with 18 data-driven themes across 12 categories. Add your own by appending to the `themes` array. Unmatched data points are analyzed for emerging patterns using bigram/trigram frequency detection.
+
+After editing, run `npm run eval` — it reports precision and recall per theme and flags keywords
+that fire on another theme's examples, which is how the over-generic ones get caught.
 
 ### Scoring formula
 

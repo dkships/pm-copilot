@@ -219,9 +219,15 @@ function featureRequestToDataPoint(req: FormattedFeatureRequest): DataPoint {
 // ── Theme matching ──
 
 // Keywords compiled once per analysis run instead of per data point.
-// Semantics are identical to matching the raw keyword list: multi-word
-// keywords match as substrings, single-word keywords on a word boundary
-// (escaped, case-insensitive, no `g` flag — a shared `g` regex is stateful).
+// Multi-word keywords match as substrings; single-word keywords match on a word
+// boundary with an optional regular plural suffix (escaped, case-insensitive, no
+// `g` flag — a shared `g` regex is stateful).
+//
+// The plural suffix matters more than it looks. Without it `plan` misses "plans"
+// and `tier` misses "tiers", and the config listed plurals only where someone
+// happened to think of it ("booking"/"bookings" both present, "tier" alone).
+// Irregular plurals still need listing explicitly — `(?:e?s)?` does not cover
+// entry/entries.
 interface CompiledKeywords {
   substrings: string[];
   wordRegexes: RegExp[];
@@ -234,7 +240,7 @@ function compileKeywords(keywords: string[]): CompiledKeywords {
     if (kw.includes(" ")) {
       substrings.push(kw.toLowerCase());
     } else {
-      wordRegexes.push(new RegExp(`\\b${escapeRegex(kw)}\\b`, "i"));
+      wordRegexes.push(new RegExp(`\\b${escapeRegex(kw)}(?:e?s)?\\b`, "i"));
     }
   }
   return { substrings, wordRegexes };

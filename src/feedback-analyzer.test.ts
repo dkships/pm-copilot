@@ -86,6 +86,34 @@ describe("matchesTheme", () => {
   it("returns false when no keyword is present", () => {
     expect(matchesTheme("everything is fine", ["billing", "api"])).toBe(false);
   });
+
+  it("matches a regular plural of a single-word keyword", () => {
+    // The bug this fixes: "what are your plans and prices?" matched nothing,
+    // because `plan` and `pricing` are singular and the config listed plurals
+    // only where someone happened to think of it.
+    expect(matchesTheme("what are your plans and prices", ["plan", "price"])).toBe(true);
+    expect(matchesTheme("difference between the tiers", ["tier"])).toBe(true);
+  });
+
+  it("matches an -es plural", () => {
+    expect(matchesTheme("too many classes booked", ["class"])).toBe(true);
+  });
+
+  it("still refuses a match inside a longer word", () => {
+    expect(matchesTheme("we need rapid responses", ["api"])).toBe(false);
+    expect(matchesTheme("the planner is broken", ["plan"])).toBe(false);
+  });
+
+  it("does not pluralise multi-word keywords, which match as substrings", () => {
+    expect(matchesTheme("i need a time slot", ["time slot"])).toBe(true);
+    expect(matchesTheme("i need time slots", ["time slot"])).toBe(true);
+  });
+
+  it("leaves irregular plurals to explicit keywords", () => {
+    // entry/entries is why the giveaways theme lists both.
+    expect(matchesTheme("how many entries do i get", ["entry"])).toBe(false);
+    expect(matchesTheme("how many entries do i get", ["entry", "entries"])).toBe(true);
+  });
 });
 
 // ── analyzeFeedback: counts, convergence, sorting ──
