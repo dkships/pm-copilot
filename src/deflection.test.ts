@@ -39,7 +39,7 @@ function deflected(
   return {
     id: "conv-1",
     title: "I need a refund",
-    agent: "tidycal",
+    agent: "portal-a",
     channel: "Widget or Iframe",
     customerMessages: ["I need a refund"],
     turnCount: 1,
@@ -52,7 +52,7 @@ function deflected(
 describe("formatDeflectedConversation", () => {
   it("keeps customer turns and drops assistant turns", () => {
     const sink = new Set<string>();
-    const out = formatDeflectedConversation(rawConv(), "tidycal", sink);
+    const out = formatDeflectedConversation(rawConv(), "portal-a", sink);
     expect(out.customerMessages).toHaveLength(2);
     expect(out.customerMessages.join(" ")).not.toContain("Happy to help");
     expect(out.turnCount).toBe(2);
@@ -60,7 +60,7 @@ describe("formatDeflectedConversation", () => {
 
   it("scrubs PII from customer turns and records the category", () => {
     const sink = new Set<string>();
-    const out = formatDeflectedConversation(rawConv(), "tidycal", sink);
+    const out = formatDeflectedConversation(rawConv(), "portal-a", sink);
     expect(out.customerMessages[1]).toContain("[EMAIL REDACTED]");
     expect(out.customerMessages[1]).not.toContain("jane@example.com");
     expect([...sink]).toContain("email");
@@ -74,7 +74,7 @@ describe("formatDeflectedConversation", () => {
       form_submission: { name: "Jane Doe", email: "jane@example.com" },
       userId: "user_abc",
     } as ChatbaseConversation;
-    const out = formatDeflectedConversation(raw, "tidycal", sink);
+    const out = formatDeflectedConversation(raw, "portal-a", sink);
     const serialized = JSON.stringify(out);
     expect(serialized).not.toContain("US");
     expect(serialized).not.toContain("Jane Doe");
@@ -93,7 +93,7 @@ describe("formatDeflectedConversation", () => {
 
   it("uses the first scrubbed customer turn as the title", () => {
     const sink = new Set<string>();
-    const out = formatDeflectedConversation(rawConv(), "tidycal", sink);
+    const out = formatDeflectedConversation(rawConv(), "portal-a", sink);
     expect(out.title).toBe("I need a refund");
   });
 

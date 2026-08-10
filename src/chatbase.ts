@@ -167,7 +167,7 @@ export class ChatbaseClient {
 
 /**
  * Parse agent configs from the environment.
- * Multi-agent: CHATBASE_AGENTS="tidycal|abc123,sendfox|def456"
+ * Multi-agent: CHATBASE_AGENTS="portal-a|abc123,portal-b|def456"
  * Single agent: CHATBASE_AGENT_ID (+ optional CHATBASE_AGENT_NAME)
  * Both need CHATBASE_API_KEY, which is account-wide.
  */

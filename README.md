@@ -358,16 +358,16 @@ products, from a 30-day window *before* the one the new themes were derived from
 
 | product | conversations | v2 unmatched | v3 unmatched | change |
 |---------|--------------:|-------------:|-------------:|-------:|
-| TidyCal | 435 | 20.5% | 19.3% | −1.1pp |
-| SendFox | 464 | 58.4% | 48.5% | −9.9pp |
-| BreezeDoc | 135 | 25.9% | 23.7% | −2.2pp |
-| KingSumo | 66 | 66.7% | 34.8% | −31.8pp |
+| Product A | 435 | 20.5% | 19.3% | −1.1pp |
+| Product B | 464 | 58.4% | 48.5% | −9.9pp |
+| Product C | 135 | 25.9% | 23.7% | −2.2pp |
+| Product D | 66 | 66.7% | 34.8% | −31.8pp |
 | **all** | **1,100** | **39.9%** | **33.1%** | **−6.8pp** |
 
 The gains land where the theory said they would: the products whose vocabulary the config never
 covered. A third of conversations still match nothing, so there is plenty left.
 
-Register turned out to matter less than product coverage. TidyCal chat is *better* matched than
+Register turned out to matter less than product coverage. Product A chat is *better* matched than
 tickets are, so chat phrasing on its own is not the problem — missing product vocabulary is, and
 per-product chat agents expose that where a shared support mailbox averages it away.
 
