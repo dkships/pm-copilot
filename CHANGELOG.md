@@ -46,7 +46,15 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - Measured on 1,100 held-out chat conversations from a window the new themes were not derived
   from: unmatched fell from 39.9% to 33.1%. Per product — KingSumo 66.7% → 34.8%,
   SendFox 58.4% → 48.5%, BreezeDoc 25.9% → 23.7%, TidyCal 20.5% → 19.3%.
-- Eval CI floor raised from `--min-f1 0.60` to `0.90` now that the fixture gate is meaningful.
+- Eval CI floor raised from `--min-f1 0.60` to `0.90` now that the fixture gate is meaningful, and
+  the eval runs as a CI step so a config edit that drops matching quality fails the build.
+
+### Security
+
+- `npm audit fix` cleared the two high-severity transitive advisories that were failing
+  `audit:ci` (`fast-uri` GHSA-v2hh-gcrm-f6hx and related, `ip-address`), plus the remaining
+  moderate and low findings. Lockfile-only — no direct dependency ranges changed, and
+  `@modelcontextprotocol/sdk` stays within `^1.29.0` at 1.30.0.
 
 ### Fixed
 
