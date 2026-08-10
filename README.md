@@ -112,6 +112,7 @@ Cross-references HelpScout tickets, ProductLift feature requests, and Chatbase c
 | `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
 | `agent_name` | string | — | Chatbase agent filter. Run `list_sources` to see names |
+| `source_filter` | string | — | Chatbase conversation source filter, comma-separated for multiple, e.g. `Widget or Iframe` or `WhatsApp,API`. Case-insensitive. Run `list_sources` for the valid values |
 | `detail_level` | string | `"summary"` | `"summary"`, `"standard"`, or `"full"`. Output size scales with data volume — roughly 20KB / 100KB / 600KB |
 
 Returns themes sorted by priority score, each with reactive/proactive counts, convergence flag, evidence summaries, and representative customer quotes.
@@ -128,6 +129,7 @@ Builds a prioritized product plan with evidence and customer quotes. Accepts ext
 | `mailbox_name` | string | — | HelpScout mailbox name (case-insensitive); auto-resolved to an ID. Run `list_sources` to see names |
 | `portal_name` | string | — | ProductLift portal filter |
 | `agent_name` | string | — | Chatbase agent filter. Run `list_sources` to see names |
+| `source_filter` | string | — | Chatbase conversation source filter, comma-separated for multiple, e.g. `Widget or Iframe` or `WhatsApp,API`. Case-insensitive. Run `list_sources` for the valid values |
 | `kpi_context` | string | — | Business metrics from other MCP servers |
 | `max_priorities` | number | 5 | Number of priorities to return (1-10) |
 | `preview_only` | boolean | false | Audit mode: show what data *would* be sent |
@@ -149,8 +151,10 @@ public `url`.
 
 Lists the data sources the server is connected to — HelpScout mailboxes (id + name),
 ProductLift portals (name + url), and Chatbase agents (name + id) — so you can discover the
-names to pass to `mailbox_name` / `portal_name` / `agent_name`. Read-only; never returns API
-keys or customer data. Takes no parameters.
+names to pass to `mailbox_name` / `portal_name` / `agent_name`. When Chatbase is configured it
+also returns `chatbase_conversation_sources`, the values `source_filter` accepts (a fixed list
+from the Chatbase docs, not queried per account). Read-only; never returns API keys or customer
+data. Takes no parameters.
 
 ## Signal classes
 
@@ -175,6 +179,14 @@ asking about that self-serve does not resolve. Chatbase does not document what i
 field measures, so it is reported as evidence for the LLM to weigh rather than folded into the
 priority score.
 
+Conversations arrive from several channels (widget, WhatsApp, Messenger, API, …). The analysis
+reports a `chatbase_sources` count per channel, and the `source_filter` parameter narrows a run
+to one or more channels (comma-separated) — the filter is applied server-side by Chatbase. One
+catch: counts can include channels the filter list does not cover, like `Playground` or
+`unknown` (Chatbase omitted the source). A filter value outside the known list is passed
+through with a warning rather than rejected, since zero matches usually means the value is
+wrong, not that the channel went quiet.
+
 Chatbase is optional. With no `CHATBASE_API_KEY` set, the deflection fields are simply absent
 and the analysis behaves exactly as before.
 
@@ -195,6 +207,11 @@ A trimmed `synthesize_feedback` response at the default `summary` detail level. 
     "reactive_count": 548,
     "proactive_count": 64,
     "deflected_count": 312,
+    "chatbase_sources": {
+      "Widget or Iframe": 284,
+      "WhatsApp": 23,
+      "API": 5
+    },
     "themes": [
       {
         "theme_id": "booking-scheduling",

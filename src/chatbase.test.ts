@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ChatbaseClient, parseAgentConfigs } from "./chatbase.js";
+import { ChatbaseClient, parseAgentConfigs, normalizeSourceFilter } from "./chatbase.js";
 
 const AGENT = { name: "portal-a", agentId: "abc123" };
 
@@ -65,6 +65,29 @@ describe("parseAgentConfigs", () => {
   });
 });
 
+describe("normalizeSourceFilter", () => {
+  it("trims tokens and canonicalizes case against the known source list", () => {
+    expect(normalizeSourceFilter("whatsapp, widget or iframe")).toEqual({
+      filter: "WhatsApp,Widget or Iframe",
+      unknown: [],
+    });
+  });
+
+  it("keeps unknown tokens as typed and reports them", () => {
+    expect(normalizeSourceFilter("Playground,API")).toEqual({
+      filter: "Playground,API",
+      unknown: ["Playground"],
+    });
+  });
+
+  it("drops empty tokens from a sloppy comma list", () => {
+    expect(normalizeSourceFilter("API,,Slack,")).toEqual({
+      filter: "API,Slack",
+      unknown: [],
+    });
+  });
+});
+
 describe("ChatbaseClient.fetchConversations", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -94,6 +117,18 @@ describe("ChatbaseClient.fetchConversations", () => {
     expect((init as RequestInit).headers).toMatchObject({
       Authorization: "Bearer secret-key",
     });
+    // No source filter requested — the parameter must not appear at all.
+    expect(parsed.searchParams.has("filteredSources")).toBe(false);
+  });
+
+  it("passes filteredSources through as a query parameter when provided", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [] }));
+    const client = new ChatbaseClient("k", AGENT);
+    await client.fetchConversations(30, "Widget or Iframe,WhatsApp");
+
+    const [url] = fetchMock.mock.calls[0]!;
+    const parsed = new URL(url as string);
+    expect(parsed.searchParams.get("filteredSources")).toBe("Widget or Iframe,WhatsApp");
   });
 
   it("stops paginating on a short page", async () => {

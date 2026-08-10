@@ -20,6 +20,50 @@ const MAX_RETRIES = 3;
 
 const API_BASE = "https://www.chatbase.co/api/v1";
 
+/**
+ * Source types the v1 `filteredSources` query parameter accepts, per the
+ * Chatbase docs. Hard-coded — the API has no endpoint to enumerate them.
+ */
+export const CHATBASE_CONVERSATION_SOURCES = [
+  "API",
+  "Chatbase site",
+  "Instagram",
+  "Messenger",
+  "Slack",
+  "Unspecified",
+  "WhatsApp",
+  "Widget or Iframe",
+] as const;
+
+/**
+ * Normalize a user-supplied source filter: split on commas, trim each token,
+ * and canonicalize casing against CHATBASE_CONVERSATION_SOURCES ("whatsapp" →
+ * "WhatsApp"). Tokens the list does not cover — "Playground", "unknown", typos —
+ * are kept as typed, since the API may accept values the list has not caught up
+ * with, and reported back so the caller can warn instead of letting a wrong
+ * value silently match zero conversations.
+ */
+export function normalizeSourceFilter(filter: string): {
+  filter: string;
+  unknown: string[];
+} {
+  const canonical = new Map(
+    CHATBASE_CONVERSATION_SOURCES.map((s) => [s.toLowerCase(), s] as const)
+  );
+  const unknown: string[] = [];
+  const normalized = filter
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0)
+    .map((t) => {
+      const match = canonical.get(t.toLowerCase());
+      if (match) return match;
+      unknown.push(t);
+      return t;
+    });
+  return { filter: normalized.join(","), unknown };
+}
+
 export interface AgentConfig {
   name: string;
   agentId: string;
@@ -138,8 +182,13 @@ export class ChatbaseClient {
   /**
    * Fetch conversations in the timeframe. Dates are filtered server-side, so
    * unlike the ProductLift client this does no client-side date trimming.
+   * `filteredSources` is a comma-separated list of source types (see
+   * CHATBASE_CONVERSATION_SOURCES), also applied server-side.
    */
-  async fetchConversations(timeframeDays: number): Promise<ChatbaseConversation[]> {
+  async fetchConversations(
+    timeframeDays: number,
+    filteredSources?: string
+  ): Promise<ChatbaseConversation[]> {
     const end = new Date();
     const start = new Date(end.getTime() - timeframeDays * 86_400_000);
 
@@ -153,6 +202,7 @@ export class ChatbaseClient {
           endDate: isoDate(end),
           page: String(page),
           size: String(PAGE_SIZE),
+          ...(filteredSources ? { filteredSources } : {}),
         }
       );
 

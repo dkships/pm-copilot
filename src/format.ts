@@ -391,6 +391,7 @@ export function trimAnalysisForDetail(
     reactive_count: analysis.reactive_count,
     proactive_count: analysis.proactive_count,
     ...(analysis.deflected_count > 0 && { deflected_count: analysis.deflected_count }),
+    ...(analysis.chatbase_sources && { chatbase_sources: analysis.chatbase_sources }),
     themes,
     emerging_themes,
     unmatched_count: analysis.unmatched_count,

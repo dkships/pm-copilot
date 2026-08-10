@@ -19,6 +19,8 @@ import type { FeatureRequest, Comment, PortalConfig } from "./productlift.js";
 import {
   ChatbaseClient,
   parseAgentConfigs,
+  normalizeSourceFilter,
+  CHATBASE_CONVERSATION_SOURCES,
   type AgentConfig,
 } from "./chatbase.js";
 import {
@@ -138,6 +140,7 @@ interface FetchParams {
   mailbox_id?: string;
   portal_name?: string;
   agent_name?: string;
+  source_filter?: string;
 }
 
 interface FetchedData {
@@ -197,7 +200,18 @@ async function fetchChatbase(
   params: FetchParams,
   piiSink: Set<string>
 ): Promise<{ deflected: FormattedDeflectedConversation[]; warnings: string[] }> {
-  if (chatbaseClients.length === 0) return { deflected: [], warnings: [] };
+  if (chatbaseClients.length === 0) {
+    // A filter with nothing to filter would otherwise be silently ignored while
+    // the response metadata implies it was applied.
+    return {
+      deflected: [],
+      warnings: params.source_filter
+        ? [
+            `source_filter "${params.source_filter}" was ignored: no Chatbase agents are configured.`,
+          ]
+        : [],
+    };
+  }
 
   const clients = filterClientsByAgent(params.agent_name);
   if (clients.length === 0) {
@@ -212,11 +226,28 @@ async function fetchChatbase(
     return { deflected: [], warnings: [] };
   }
 
+  const warnings: string[] = [];
+  let sourceFilter: string | undefined;
+  if (params.source_filter) {
+    const { filter, unknown } = normalizeSourceFilter(params.source_filter);
+    sourceFilter = filter;
+    if (unknown.length > 0) {
+      warnings.push(
+        `Unrecognized Chatbase conversation source(s): ${unknown.join(", ")}. ` +
+          `Known values: ${CHATBASE_CONVERSATION_SOURCES.join(", ")}. ` +
+          "Passed through as given — zero deflected conversations may mean the value is wrong."
+      );
+    }
+  }
+
   // One agent per product, fetched in parallel and isolated — a single failing
   // agent becomes a warning rather than dropping every agent's data.
   const results = await Promise.allSettled(
     clients.map(async (client) => {
-      const conversations = await client.fetchConversations(params.timeframe_days);
+      const conversations = await client.fetchConversations(
+        params.timeframe_days,
+        sourceFilter
+      );
       return conversations
         .map((c) => formatDeflectedConversation(c, client.agentName, piiSink))
         // A conversation with no customer turns carries no signal.
@@ -225,7 +256,6 @@ async function fetchChatbase(
   );
 
   const deflected: FormattedDeflectedConversation[] = [];
-  const warnings: string[] = [];
   results.forEach((result, i) => {
     if (result.status === "fulfilled") {
       deflected.push(...result.value);
@@ -322,7 +352,11 @@ interface CacheEntry {
 const fetchCache = new Map<string, CacheEntry>();
 
 function cacheKey(params: FetchParams): string {
-  return `${params.timeframe_days}|${params.mailbox_id ?? ""}|${params.portal_name ?? ""}|${params.top_voted_limit}|${params.agent_name ?? ""}`;
+  // source_filter forks the whole entry even though it only affects the
+  // Chatbase leg, so slicing one window by channel re-fetches HelpScout and
+  // ProductLift each time. Correctness over efficiency; per-source caching is
+  // the follow-up if channel slicing becomes a hot path.
+  return `${params.timeframe_days}|${params.mailbox_id ?? ""}|${params.portal_name ?? ""}|${params.top_voted_limit}|${params.agent_name ?? ""}|${params.source_filter ?? ""}`;
 }
 
 async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
@@ -496,6 +530,14 @@ server.registerTool("synthesize_feedback", {
       .string()
       .optional()
       .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
+    source_filter: z
+      .string()
+      .optional()
+      .describe(
+        "Chatbase conversation source(s) to filter by (optional), comma-separated for " +
+        "multiple. Case-insensitive. Examples: 'Widget or Iframe', 'WhatsApp,API'. " +
+        "Run list_sources to see available sources."
+      ),
     detail_level: z
       .enum(["summary", "standard", "full"])
       .default("summary")
@@ -506,7 +548,7 @@ server.registerTool("synthesize_feedback", {
         "'full' (~600KB): all data points — for export/dashboard use, not LLM consumption."
       ),
   },
-}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, detail_level }) => {
+}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, source_filter, detail_level }) => {
   try {
     // Resolve name → ID at the handler boundary; the cache key only ever sees an ID.
     const resolvedMailboxId = await resolveMailboxId(mailbox_name, mailbox_id);
@@ -516,6 +558,7 @@ server.registerTool("synthesize_feedback", {
       mailbox_id: resolvedMailboxId,
       portal_name,
       agent_name,
+      source_filter,
     });
 
     if (data.fetchFailed) {
@@ -550,6 +593,9 @@ server.registerTool("synthesize_feedback", {
               mailbox_name: mailbox_name ?? null,
               portal_name: portal_name ?? "all",
               agent_name: agent_name ?? (chatbaseClients.length > 0 ? "all" : null),
+              // Only claim a filter when there is a Chatbase leg it applies to —
+              // when unconfigured, fetchChatbase warns and this reads null.
+              source_filter: chatbaseClients.length > 0 ? (source_filter ?? "all") : null,
               top_voted_limit,
               fetched_at: new Date().toISOString(),
               pii_scrubbing_applied: true,
@@ -745,6 +791,14 @@ server.registerTool("generate_product_plan", {
       .string()
       .optional()
       .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
+    source_filter: z
+      .string()
+      .optional()
+      .describe(
+        "Chatbase conversation source(s) to filter by (optional), comma-separated for " +
+        "multiple. Case-insensitive. Examples: 'Widget or Iframe', 'WhatsApp,API'. " +
+        "Run list_sources to see available sources."
+      ),
     kpi_context: z
       .string()
       .optional()
@@ -783,7 +837,7 @@ server.registerTool("generate_product_plan", {
         "'markdown': a ready-to-read product brief (ranked table + quotes) for planning docs."
       ),
   },
-}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, kpi_context, max_priorities, preview_only, detail_level, format }) => {
+}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, source_filter, kpi_context, max_priorities, preview_only, detail_level, format }) => {
   try {
     // Preview mode: show what would be sent without fetching
     if (preview_only) {
@@ -827,6 +881,10 @@ server.registerTool("generate_product_plan", {
                     ? "AI support agent conversations, customer turns only"
                     : "SKIPPED (not configured)",
                   agents: filteredAgents,
+                  // Only meaningful when the Chatbase fetch actually runs.
+                  ...(chatbaseClients.length > 0 && {
+                    source_filter: source_filter ?? "all",
+                  }),
                   timeframe_days,
                   fields_sent: ["customer messages (PII-scrubbed)", "channel", "answer confidence (min_score)", "turn count", "created timestamp"],
                   fields_NOT_sent: ["assistant/bot replies", "captured lead form submissions", "end-user identifiers", "country"],
@@ -858,6 +916,7 @@ server.registerTool("generate_product_plan", {
       mailbox_id: resolvedMailboxId,
       portal_name,
       agent_name,
+      source_filter,
     });
 
     if (data.fetchFailed) {
@@ -947,6 +1006,9 @@ server.registerTool("generate_product_plan", {
         proactive_signals: data.analysis.proactive_count,
         ...(data.analysis.deflected_count > 0 && {
           deflected_signals: data.analysis.deflected_count,
+        }),
+        ...(data.analysis.chatbase_sources && {
+          chatbase_sources: data.analysis.chatbase_sources,
         }),
         themes_detected: data.analysis.themes.length,
         convergent_themes: data.analysis.themes.filter((t) => t.convergent).length,
@@ -1120,9 +1182,10 @@ server.registerTool("list_sources", {
   title: "List Configured Sources",
   description:
     "List the data sources this server is connected to: HelpScout mailboxes (id + name), " +
-    "ProductLift portals (name + url), and Chatbase agents (name). Use these names with the " +
-    "mailbox_name / portal_name / agent_name parameters on the other tools. Read-only; never " +
-    "returns API keys or customer data.",
+    "ProductLift portals (name + url), and Chatbase agents (name), plus the conversation " +
+    "source values accepted by the source_filter parameter. Use these names with the " +
+    "mailbox_name / portal_name / agent_name / source_filter parameters on the other tools. " +
+    "Read-only; never returns API keys or customer data.",
   inputSchema: {},
 }, async () => {
   try {
@@ -1165,6 +1228,11 @@ server.registerTool("list_sources", {
               helpscout_mailboxes,
               productlift_portals,
               chatbase_agents,
+              // The valid source_filter values — a fixed list from the Chatbase
+              // docs, not queried per account.
+              ...(agentConfigs.length > 0 && {
+                chatbase_conversation_sources: [...CHATBASE_CONVERSATION_SOURCES],
+              }),
               ...(warnings.length > 0 && { warnings }),
             },
             null,
