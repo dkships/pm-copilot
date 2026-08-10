@@ -9,7 +9,9 @@ An MCP server that triangulates customer support tickets, feature requests, and 
 
 ---
 
-> **Real results:** Analyzed 2,370 signals (2,136 support tickets + 234 feature requests) across 3 products in 55 seconds. Identified 16 themes, 15 convergent. Top priority: Booking & Scheduling (score: 134.6) — 629 tickets + 77 feature requests pointing at the same problem.
+> **Real results:** Analyzed 3,353 signals in one 30-day window — 1,678 support tickets, 276 feature requests, and 1,399 AI support agent conversations across 4 products. Top priority: Booking & Scheduling — 285 tickets + 74 feature requests + 347 chats pointing at the same problem, with the AI agent answering with low confidence in 48% of those chats.
+>
+> The 1,399 chats are the point. None of them were visible to the analysis before v1.4.0, and they are 83% the volume of the ticket channel.
 
 **Read the full story:** [I built an MCP server that changed how I prioritize products](https://dmkthinks.org/blog/i-built-an-mcp-server-that-changed-how-i-prioritize-products/) — why I built this, how convergent signals work in practice, and what I learned building with Claude Code.
 
@@ -187,11 +189,12 @@ A trimmed `synthesize_feedback` response at the default `summary` detail level. 
   "portal_name": "all",
   "fetched_at": "2026-06-01T16:00:00.000Z",
   "pii_scrubbing_applied": true,
-  "pii_categories_redacted": ["email", "phone"],
+  "pii_categories_redacted": ["email", "phone", "credit_card"],
   "analysis": {
     "total_data_points": 612,
     "reactive_count": 548,
     "proactive_count": 64,
+    "deflected_count": 312,
     "themes": [
       {
         "theme_id": "booking-scheduling",
@@ -202,24 +205,31 @@ A trimmed `synthesize_feedback` response at the default `summary` detail level. 
         "signal_type": "convergent",
         "reactive_count": 211,
         "proactive_count": 19,
-        "evidence_summary": "230 signals (211 support tickets, 19 feature requests). Convergent — appears in both support and feature requests (2x priority boost).",
+        "deflected_count": 96,
+        "self_serve_failure_rate": 0.48,
+        "mean_answer_confidence": 0.53,
+        "evidence_summary": "326 signals (211 support tickets, 19 feature requests, 96 AI chat conversations). Convergent — appears in both support and feature requests (2x priority boost). The AI agent answered with low confidence in 48% of those chats — customers ask about this and self-serve often does not resolve it.",
         "representative_quotes": [
           "[Support ticket] \"Double-booked slots again after the timezone change — reach me at [EMAIL REDACTED]\"",
-          "[Feature request, 47 votes] \"Let me block buffer time between meetings\""
+          "[Feature request, 47 votes] \"Let me block buffer time between meetings\"",
+          "[AI chat, answer confidence 0.31] \"how do i stop people booking on weekends\""
         ]
       },
       {
-        "theme_id": "billing-payment",
-        "label": "Billing & Payment",
-        "category": "billing",
-        "priority_score": 64.3,
+        "theme_id": "list-management",
+        "label": "List & Contact Management",
+        "category": "audience",
+        "priority_score": 41.7,
         "convergent": false,
-        "signal_type": "reactive",
-        "reactive_count": 188,
+        "signal_type": "deflected",
+        "reactive_count": 0,
         "proactive_count": 0,
-        "evidence_summary": "188 signals (188 support tickets).",
+        "deflected_count": 58,
+        "self_serve_failure_rate": 0.58,
+        "mean_answer_confidence": 0.5,
+        "evidence_summary": "58 signals (58 AI chat conversations). The AI agent answered with low confidence in 58% of those chats — customers ask about this and self-serve often does not resolve it.",
         "representative_quotes": [
-          "[Support ticket] \"Charged twice for the annual plan\""
+          "[AI chat, answer confidence 0.22] \"how many contacts does pro allow\""
         ]
       }
     ],
@@ -241,13 +251,13 @@ PM Copilot is designed to work alongside other MCP servers. Here's a worked exam
 
 **Step 2: pm-copilot analyzes the signals and returns the top priorities**
 
-| # | Theme | Score | Tickets | Feature Requests | Signal |
-|---|-------|------:|--------:|-----------------:|--------|
-| 1 | Billing & Payment | 91.1 | 2,336 | 20 | Convergent |
-| 2 | Booking & Scheduling | 87.1 | 682 | 74 | Convergent |
-| 3 | Account & Licensing | 69.7 | 1,955 | 8 | Convergent |
-| 4 | Team & Collaboration | 64.4 | 1,875 | 19 | Convergent |
-| 5 | Whitelabel & Branding | 50.2 | 92 | 30 | Convergent |
+| # | Theme | Score | Tickets | Feature Requests | Chats | Self-serve fail | Signal |
+|---|-------|------:|--------:|-----------------:|------:|----------------:|--------|
+| 1 | Billing & Payment | 91.1 | 2,336 | 20 | 187 | 53% | Convergent |
+| 2 | Booking & Scheduling | 87.1 | 682 | 74 | 347 | 48% | Convergent |
+| 3 | Account & Licensing | 69.7 | 1,955 | 8 | 343 | 40% | Convergent |
+| 4 | Team & Collaboration | 64.4 | 1,875 | 19 | 69 | 49% | Convergent |
+| 5 | Whitelabel & Branding | 50.2 | 92 | 30 | 103 | 46% | Convergent |
 
 **Step 3: Business metrics from dashboards arrive as `kpi_context`**
 
