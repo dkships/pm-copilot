@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ChatbaseClient, parseAgentConfigs } from "./chatbase.js";
 
-const AGENT = { name: "tidycal", agentId: "abc123" };
+const AGENT = { name: "portal-a", agentId: "abc123" };
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -23,30 +23,30 @@ describe("parseAgentConfigs", () => {
   });
 
   it("parses the multi-agent form", () => {
-    process.env.CHATBASE_AGENTS = "tidycal|abc123,sendfox|def456";
+    process.env.CHATBASE_AGENTS = "portal-a|abc123,portal-b|def456";
     expect(parseAgentConfigs()).toEqual([
-      { name: "tidycal", agentId: "abc123" },
-      { name: "sendfox", agentId: "def456" },
+      { name: "portal-a", agentId: "abc123" },
+      { name: "portal-b", agentId: "def456" },
     ]);
   });
 
   it("trims whitespace and ignores empty entries", () => {
-    process.env.CHATBASE_AGENTS = " tidycal | abc123 , ,sendfox|def456";
+    process.env.CHATBASE_AGENTS = " portal-a | abc123 , ,portal-b|def456";
     expect(parseAgentConfigs()).toEqual([
-      { name: "tidycal", agentId: "abc123" },
-      { name: "sendfox", agentId: "def456" },
+      { name: "portal-a", agentId: "abc123" },
+      { name: "portal-b", agentId: "def456" },
     ]);
   });
 
   it("throws on a malformed entry rather than silently dropping an agent", () => {
-    process.env.CHATBASE_AGENTS = "tidycal";
+    process.env.CHATBASE_AGENTS = "portal-a";
     expect(() => parseAgentConfigs()).toThrow(/Expected "name\|agentId"/);
   });
 
   it("falls back to the single-agent form", () => {
     process.env.CHATBASE_AGENT_ID = "abc123";
-    process.env.CHATBASE_AGENT_NAME = "tidycal";
-    expect(parseAgentConfigs()).toEqual([{ name: "tidycal", agentId: "abc123" }]);
+    process.env.CHATBASE_AGENT_NAME = "portal-a";
+    expect(parseAgentConfigs()).toEqual([{ name: "portal-a", agentId: "abc123" }]);
   });
 
   it("defaults the single-agent name", () => {
@@ -59,9 +59,9 @@ describe("parseAgentConfigs", () => {
   });
 
   it("prefers the multi-agent form over the single-agent form", () => {
-    process.env.CHATBASE_AGENTS = "tidycal|abc123";
+    process.env.CHATBASE_AGENTS = "portal-a|abc123";
     process.env.CHATBASE_AGENT_ID = "ignored";
-    expect(parseAgentConfigs()).toEqual([{ name: "tidycal", agentId: "abc123" }]);
+    expect(parseAgentConfigs()).toEqual([{ name: "portal-a", agentId: "abc123" }]);
   });
 });
 
@@ -138,7 +138,7 @@ describe("ChatbaseClient.fetchConversations", () => {
   it("names the agent on a 404", async () => {
     fetchMock.mockResolvedValue(jsonResponse({}, { status: 404 }));
     const client = new ChatbaseClient("k", AGENT);
-    await expect(client.fetchConversations(30)).rejects.toThrow(/tidycal.*not found/);
+    await expect(client.fetchConversations(30)).rejects.toThrow(/portal-a.*not found/);
   });
 
   it("retries a 429 honouring Retry-After, then succeeds", async () => {

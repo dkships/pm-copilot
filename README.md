@@ -253,11 +253,11 @@ PM Copilot is designed to work alongside other MCP servers. Here's a worked exam
 
 | # | Theme | Score | Tickets | Feature Requests | Chats | Self-serve fail | Signal |
 |---|-------|------:|--------:|-----------------:|------:|----------------:|--------|
-| 1 | Billing & Payment | 91.1 | 2,336 | 20 | 187 | 53% | Convergent |
-| 2 | Booking & Scheduling | 87.1 | 682 | 74 | 347 | 48% | Convergent |
-| 3 | Account & Licensing | 69.7 | 1,955 | 8 | 343 | 40% | Convergent |
-| 4 | Team & Collaboration | 64.4 | 1,875 | 19 | 69 | 49% | Convergent |
-| 5 | Whitelabel & Branding | 50.2 | 92 | 30 | 103 | 46% | Convergent |
+| 1 | Billing & Payment | 91.1 | 2,336 | 20 | 240 | 55% | Convergent |
+| 2 | Booking & Scheduling | 87.1 | 682 | 74 | 310 | 45% | Convergent |
+| 3 | Account & Licensing | 69.7 | 1,955 | 8 | 180 | 38% | Convergent |
+| 4 | Team & Collaboration | 64.4 | 1,875 | 19 | 60 | 50% | Convergent |
+| 5 | Whitelabel & Branding | 50.2 | 92 | 30 | 95 | 42% | Convergent |
 
 **Step 3: Business metrics from dashboards arrive as `kpi_context`**
 
@@ -358,16 +358,16 @@ products, from a 30-day window *before* the one the new themes were derived from
 
 | product | conversations | v2 unmatched | v3 unmatched | change |
 |---------|--------------:|-------------:|-------------:|-------:|
-| TidyCal | 435 | 20.5% | 19.3% | −1.1pp |
-| SendFox | 464 | 58.4% | 48.5% | −9.9pp |
-| BreezeDoc | 135 | 25.9% | 23.7% | −2.2pp |
-| KingSumo | 66 | 66.7% | 34.8% | −31.8pp |
+| Product A | 435 | 20.5% | 19.3% | −1.1pp |
+| Product B | 464 | 58.4% | 48.5% | −9.9pp |
+| Product C | 135 | 25.9% | 23.7% | −2.2pp |
+| Product D | 66 | 66.7% | 34.8% | −31.8pp |
 | **all** | **1,100** | **39.9%** | **33.1%** | **−6.8pp** |
 
 The gains land where the theory said they would: the products whose vocabulary the config never
 covered. A third of conversations still match nothing, so there is plenty left.
 
-Register turned out to matter less than product coverage. TidyCal chat is *better* matched than
+Register turned out to matter less than product coverage. Product A chat is *better* matched than
 tickets are, so chat phrasing on its own is not the problem — missing product vocabulary is, and
 per-product chat agents expose that where a shared support mailbox averages it away.
 

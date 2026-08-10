@@ -4,6 +4,20 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Fixed
+
+- Six lines in `evals/theme-matching.jsonl` were verbatim or near-verbatim real customer chat
+  messages rather than the synthetic text the fixture is documented to contain. They carried no
+  PII — short product questions, no names, addresses or identifiers — but real customer wording
+  does not belong in a public fixture. Replaced with invented phrasings that exercise the same
+  keywords; both new themes still score 100% and micro F1 is unchanged at 0.974.
+- `server.json` declared an `@dkships/pm-copilot` npm package that does not exist and is not
+  planned. The `packages` block is removed; the manifest now describes the server without
+  claiming a distribution channel. Distribution is the GitHub release plus clone-and-build.
+- The bug-report template and CONTRIBUTING asked reporters for `npm ls @dkships/pm-copilot`,
+  which cannot work for a clone-and-build install. Both now ask for the `package.json` version or
+  the commit SHA.
+
 ## [1.4.0] — 2026-08-10
 
 ### Added
@@ -11,7 +25,7 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - Chatbase as a third signal class (`src/chatbase.ts`). AI support agent conversations are the
   deflection signal: questions the bot answers never become tickets, so ticket-based
   prioritization undercounts every theme the bot handles, and the gap widens as the bot
-  improves. Measured on four AppSumo Originals agents over 30 days — 1,394 conversations
+  improves. Measured on four AI support agents, one per product, over 30 days — 1,394 conversations
   against 1,678 tickets in the same window, so roughly 83% of the ticket channel was invisible
   to the analysis.
 - `SignalType` gains `DEFLECTED`. Deflected signals count toward the frequency term and add
@@ -48,8 +62,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
   keywords assigned to a single theme (`upgrade`/`downgrade` to Account & Licensing, `two factor`
   to Login & Auth), and missing variants added across 13 themes.
 - Measured on 1,100 held-out chat conversations from a window the new themes were not derived
-  from: unmatched fell from 39.9% to 33.1%. Per product — KingSumo 66.7% → 34.8%,
-  SendFox 58.4% → 48.5%, BreezeDoc 25.9% → 23.7%, TidyCal 20.5% → 19.3%.
+  from: unmatched fell from 39.9% to 33.1%. Per product — Product D 66.7% → 34.8%,
+  Product B 58.4% → 48.5%, Product C 25.9% → 23.7%, Product A 20.5% → 19.3%.
 - Eval CI floor raised from `--min-f1 0.60` to `0.90` now that the fixture gate is meaningful, and
   the eval runs as a CI step so a config edit that drops matching quality fails the build.
 
