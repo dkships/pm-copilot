@@ -94,6 +94,18 @@ describe("ChatbaseClient.fetchConversations", () => {
     expect((init as RequestInit).headers).toMatchObject({
       Authorization: "Bearer secret-key",
     });
+    // No source filter requested — the parameter must not appear at all.
+    expect(parsed.searchParams.has("filteredSources")).toBe(false);
+  });
+
+  it("passes filteredSources through as a query parameter when provided", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [] }));
+    const client = new ChatbaseClient("k", AGENT);
+    await client.fetchConversations(30, "Widget or Iframe,WhatsApp");
+
+    const [url] = fetchMock.mock.calls[0]!;
+    const parsed = new URL(url as string);
+    expect(parsed.searchParams.get("filteredSources")).toBe("Widget or Iframe,WhatsApp");
   });
 
   it("stops paginating on a short page", async () => {

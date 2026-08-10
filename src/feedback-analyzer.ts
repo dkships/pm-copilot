@@ -70,6 +70,11 @@ export interface AnalysisResult {
   reactive_count: number;
   proactive_count: number;
   deflected_count: number;
+  /**
+   * Deflected conversation count by channel ("Widget or Iframe", "WhatsApp", …).
+   * Present only when the analysis includes deflected conversations.
+   */
+  chatbase_sources?: Record<string, number>;
   themes: ThemeMatch[];
   emerging_themes: EmergingTheme[];
   unmatched_count: number;
@@ -536,6 +541,11 @@ export function analyzeFeedback(
     config.emerging_theme_min_frequency
   );
 
+  const chatbaseSources: Record<string, number> = {};
+  for (const conv of deflected) {
+    chatbaseSources[conv.channel] = (chatbaseSources[conv.channel] ?? 0) + 1;
+  }
+
   return {
     config_version: config.version,
     known_themes_count: config.themes.length,
@@ -543,6 +553,7 @@ export function analyzeFeedback(
     reactive_count: conversations.length,
     proactive_count: featureRequests.length,
     deflected_count: deflected.length,
+    ...(deflected.length > 0 && { chatbase_sources: chatbaseSources }),
     themes,
     emerging_themes: emergingThemes,
     unmatched_count: unmatchedPoints.length,

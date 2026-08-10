@@ -20,6 +20,21 @@ const MAX_RETRIES = 3;
 
 const API_BASE = "https://www.chatbase.co/api/v1";
 
+/**
+ * Source types the v1 `filteredSources` query parameter accepts, per the
+ * Chatbase docs. Hard-coded — the API has no endpoint to enumerate them.
+ */
+export const CHATBASE_CONVERSATION_SOURCES = [
+  "API",
+  "Chatbase site",
+  "Instagram",
+  "Messenger",
+  "Slack",
+  "Unspecified",
+  "WhatsApp",
+  "Widget or Iframe",
+] as const;
+
 export interface AgentConfig {
   name: string;
   agentId: string;
@@ -138,8 +153,13 @@ export class ChatbaseClient {
   /**
    * Fetch conversations in the timeframe. Dates are filtered server-side, so
    * unlike the ProductLift client this does no client-side date trimming.
+   * `filteredSources` is a comma-separated list of source types (see
+   * CHATBASE_CONVERSATION_SOURCES), also applied server-side.
    */
-  async fetchConversations(timeframeDays: number): Promise<ChatbaseConversation[]> {
+  async fetchConversations(
+    timeframeDays: number,
+    filteredSources?: string
+  ): Promise<ChatbaseConversation[]> {
     const end = new Date();
     const start = new Date(end.getTime() - timeframeDays * 86_400_000);
 
@@ -153,6 +173,7 @@ export class ChatbaseClient {
           endDate: isoDate(end),
           page: String(page),
           size: String(PAGE_SIZE),
+          ...(filteredSources ? { filteredSources } : {}),
         }
       );
 

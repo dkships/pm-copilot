@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatDeflectedConversation, buildEvidenceSummary, signalTypeOf, extractQuotesForTheme, buildLookupMaps } from "./format.js";
+import { formatDeflectedConversation, buildEvidenceSummary, signalTypeOf, extractQuotesForTheme, buildLookupMaps, trimAnalysisForDetail } from "./format.js";
 import { analyzeFeedback } from "./feedback-analyzer.js";
 import type { ChatbaseConversation } from "./chatbase.js";
 import type {
@@ -195,6 +195,48 @@ describe("analyzeFeedback with deflected signals", () => {
   it("stays backward compatible when the deflected argument is omitted", () => {
     const result = analyzeFeedback([], [], config);
     expect(result.deflected_count).toBe(0);
+  });
+});
+
+describe("chatbase_sources aggregation", () => {
+  it("counts conversations by source channel", () => {
+    const result = analyzeFeedback([], [], config, [
+      deflected({ id: "a", channel: "Widget or Iframe" }),
+      deflected({ id: "b", channel: "Widget or Iframe" }),
+      deflected({ id: "c", channel: "WhatsApp" }),
+      deflected({ id: "d", channel: "API" }),
+    ]);
+    expect(result.chatbase_sources).toEqual({
+      "Widget or Iframe": 2,
+      WhatsApp: 1,
+      API: 1,
+    });
+  });
+
+  it("reports a single bucket when every conversation shares a source", () => {
+    const result = analyzeFeedback([], [], config, [
+      deflected({ id: "a" }),
+      deflected({ id: "b" }),
+      deflected({ id: "c" }),
+    ]);
+    expect(result.chatbase_sources).toEqual({ "Widget or Iframe": 3 });
+  });
+
+  it("omits the field when there is no deflected data", () => {
+    const result = analyzeFeedback([], [], config, []);
+    expect(result.chatbase_sources).toBeUndefined();
+  });
+
+  it("survives trimming at the summary detail level", () => {
+    const convs = [
+      deflected({ id: "a", channel: "Widget or Iframe" }),
+      deflected({ id: "b", channel: "WhatsApp" }),
+    ];
+    const analysis = analyzeFeedback([], [], config, convs);
+    const trimmed = trimAnalysisForDetail(analysis, "summary", [], [], convs) as {
+      chatbase_sources?: Record<string, number>;
+    };
+    expect(trimmed.chatbase_sources).toEqual({ "Widget or Iframe": 1, WhatsApp: 1 });
   });
 });
 
