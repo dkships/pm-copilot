@@ -6,6 +6,26 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ### Added
 
+- Chatbase as a third signal class (`src/chatbase.ts`). AI support agent conversations are the
+  deflection signal: questions the bot answers never become tickets, so ticket-based
+  prioritization undercounts every theme the bot handles, and the gap widens as the bot
+  improves. Measured on four AppSumo Originals agents over 30 days — 1,394 conversations
+  against 1,678 tickets in the same window, so roughly 83% of the ticket channel was invisible
+  to the analysis.
+- `SignalType` gains `DEFLECTED`. Deflected signals count toward the frequency term and add
+  three per-theme fields (`deflected_count`, `self_serve_failure_rate`, `mean_answer_confidence`),
+  but do not enter the severity or vote-momentum terms and do not trigger the 2x convergence
+  boost. The scoring formula and methodology version are unchanged: Chatbase does not document
+  what its `min_score` field measures, so it is reported as evidence rather than folded into a
+  score.
+- `agent_name` filter on `synthesize_feedback` and `generate_product_plan`; Chatbase agents
+  listed by `list_sources`; a `chatbase` block in `generate_product_plan`'s `preview_only`
+  output naming exactly which fields are and are not sent.
+- Uses the v1 `/get-conversations` endpoint, not v2 `/conversations/export`. v1 filters
+  server-side by date and paginates by page/size; v2 has no date filter and caps at 20 per page
+  behind an opaque cursor. v1 also returns `min_score`, and v2's per-message `feedback` field is
+  almost never populated on real widget traffic. Both need a Chatbase Standard plan.
+
 - Theme-matching eval harness (`npm run eval`, `src/theme-eval.ts`). Multi-label precision,
   recall and F1 per theme, plus a per-register breakdown and a keyword-collision report.
   Nothing previously measured whether theme assignment was correct — only that the scoring
@@ -17,6 +37,9 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ### Fixed
 
+- `buildEvidenceSummary` produced `NaN signals` for a `ThemeMatch` without a `deflected_count`.
+  The count is now treated as absent rather than added blindly, so an analysis produced before
+  the Chatbase source existed still summarises cleanly.
 - 429 retries in `HelpScoutClient.apiGet` now read the `X-RateLimit-Retry-After` header
   HelpScout actually sends (per the Mailbox API rate-limiting docs); the code previously
   looked for standard `Retry-After`, which HelpScout omits, so every 429 fell back to blind

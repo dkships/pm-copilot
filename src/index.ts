@@ -17,16 +17,23 @@ import {
 } from "./productlift.js";
 import type { FeatureRequest, Comment, PortalConfig } from "./productlift.js";
 import {
+  ChatbaseClient,
+  parseAgentConfigs,
+  type AgentConfig,
+} from "./chatbase.js";
+import {
   analyzeFeedback,
   loadThemesConfig,
   type AnalysisResult,
   type FormattedConversation,
   type FormattedFeatureRequest,
+  type FormattedDeflectedConversation,
 } from "./feedback-analyzer.js";
 import { scrubPii } from "./pii-scrubber.js";
 import {
   formatConversation,
   formatFeatureRequest,
+  formatDeflectedConversation,
   extractQuotesForTheme,
   buildEvidenceSummary,
   trimAnalysisForDetail,
@@ -71,6 +78,30 @@ function describePortals(): string {
   return portalConfigs.map((c) => c.name).join(", ");
 }
 
+// Chatbase setup — optional, and degrades the same way ProductLift does. Without
+// an API key the deflection signal is simply absent from the analysis.
+const CHATBASE_API_KEY = process.env.CHATBASE_API_KEY;
+let agentConfigs: AgentConfig[] = [];
+let agentConfigError: string | undefined;
+try {
+  agentConfigs = CHATBASE_API_KEY ? parseAgentConfigs() : [];
+} catch (error) {
+  agentConfigError = error instanceof Error ? error.message : String(error);
+  console.error(`[pm-copilot] Chatbase config error: ${agentConfigError}`);
+}
+const chatbaseClients = CHATBASE_API_KEY
+  ? agentConfigs.map((a) => new ChatbaseClient(CHATBASE_API_KEY, a))
+  : [];
+
+function describeAgents(): string {
+  if (agentConfigError) return `none (config error: ${agentConfigError})`;
+  if (!CHATBASE_API_KEY) return "none (set CHATBASE_API_KEY in .env)";
+  if (agentConfigs.length === 0) {
+    return "none (set CHATBASE_AGENTS or CHATBASE_AGENT_ID in .env)";
+  }
+  return agentConfigs.map((a) => a.name).join(", ");
+}
+
 const server = new McpServer({
   name: "pm-copilot",
   version: "1.3.0",
@@ -106,11 +137,13 @@ interface FetchParams {
   top_voted_limit: number;
   mailbox_id?: string;
   portal_name?: string;
+  agent_name?: string;
 }
 
 interface FetchedData {
   conversations: FormattedConversation[];
   featureRequests: FormattedFeatureRequest[];
+  deflected: FormattedDeflectedConversation[];
   analysis: AnalysisResult;
   piiCategoriesRedacted: string[];
   dataSources: string[];
@@ -151,6 +184,61 @@ async function resolveMailboxId(
     );
   }
   return String(match.id);
+}
+
+function filterClientsByAgent(agentName: string | undefined): ChatbaseClient[] {
+  if (!agentName) return chatbaseClients;
+  return chatbaseClients.filter(
+    (c) => c.agentName.toLowerCase() === agentName.toLowerCase()
+  );
+}
+
+async function fetchChatbase(
+  params: FetchParams,
+  piiSink: Set<string>
+): Promise<{ deflected: FormattedDeflectedConversation[]; warnings: string[] }> {
+  if (chatbaseClients.length === 0) return { deflected: [], warnings: [] };
+
+  const clients = filterClientsByAgent(params.agent_name);
+  if (clients.length === 0) {
+    if (params.agent_name) {
+      return {
+        deflected: [],
+        warnings: [
+          `No Chatbase agent named "${params.agent_name}". Configured: ${describeAgents()}`,
+        ],
+      };
+    }
+    return { deflected: [], warnings: [] };
+  }
+
+  // One agent per product, fetched in parallel and isolated — a single failing
+  // agent becomes a warning rather than dropping every agent's data.
+  const results = await Promise.allSettled(
+    clients.map(async (client) => {
+      const conversations = await client.fetchConversations(params.timeframe_days);
+      return conversations
+        .map((c) => formatDeflectedConversation(c, client.agentName, piiSink))
+        // A conversation with no customer turns carries no signal.
+        .filter((c) => c.turnCount > 0);
+    })
+  );
+
+  const deflected: FormattedDeflectedConversation[] = [];
+  const warnings: string[] = [];
+  results.forEach((result, i) => {
+    if (result.status === "fulfilled") {
+      deflected.push(...result.value);
+    } else {
+      const msg =
+        result.reason instanceof Error ? result.reason.message : String(result.reason);
+      warnings.push(
+        scrubPii(`Chatbase agent "${clients[i]?.agentName}" fetch failed: ${msg}`).text
+      );
+    }
+  });
+
+  return { deflected, warnings };
 }
 
 async function fetchProductLift(
@@ -234,7 +322,7 @@ interface CacheEntry {
 const fetchCache = new Map<string, CacheEntry>();
 
 function cacheKey(params: FetchParams): string {
-  return `${params.timeframe_days}|${params.mailbox_id ?? ""}|${params.portal_name ?? ""}|${params.top_voted_limit}`;
+  return `${params.timeframe_days}|${params.mailbox_id ?? ""}|${params.portal_name ?? ""}|${params.top_voted_limit}|${params.agent_name ?? ""}`;
 }
 
 async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
@@ -266,8 +354,8 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
   const piiCategories = new Set<string>();
   const warnings: string[] = [];
 
-  // Fetch both sources independently — one failing doesn't block the other
-  const [hsResult, plResult] = await Promise.allSettled([
+  // Fetch every source independently — one failing doesn't block the others
+  const [hsResult, plResult, cbResult] = await Promise.allSettled([
     helpscout
       .fetchConversations({
         timeframeDays: params.timeframe_days,
@@ -275,6 +363,7 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
       })
       .then((convs) => convs.map((c) => formatConversation(c, piiCategories))),
     fetchProductLift(params, piiCategories),
+    fetchChatbase(params, piiCategories),
   ]);
 
   let conversations: FormattedConversation[] = [];
@@ -304,18 +393,36 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
     console.error(`[pm-copilot] ProductLift error: ${msg}`);
   }
 
-  // Total failure = HelpScout failed AND ProductLift failed or isn't configured.
-  // An unconfigured ProductLift alone is a legitimate HelpScout-only setup.
+  let deflected: FormattedDeflectedConversation[] = [];
+  let chatbaseFailed = false;
+  if (cbResult.status === "fulfilled") {
+    deflected = cbResult.value.deflected;
+    warnings.push(...cbResult.value.warnings);
+    chatbaseFailed = deflected.length === 0 && cbResult.value.warnings.length > 0;
+  } else {
+    chatbaseFailed = true;
+    const msg = cbResult.reason instanceof Error
+      ? cbResult.reason.message
+      : String(cbResult.reason);
+    warnings.push(scrubPii(`Chatbase fetch failed: ${msg}`).text);
+    console.error(`[pm-copilot] Chatbase error: ${msg}`);
+  }
+
+  // Total failure = HelpScout failed AND every other configured source failed or
+  // isn't configured. An unconfigured ProductLift or Chatbase alone is a
+  // legitimate HelpScout-only setup.
   const fetchFailed =
     hsResult.status === "rejected" &&
-    (portalConfigs.length === 0 || productliftFailed);
+    (portalConfigs.length === 0 || productliftFailed) &&
+    (chatbaseClients.length === 0 || chatbaseFailed);
 
   const config = loadThemesConfig();
-  const analysis = analyzeFeedback(conversations, featureRequests, config);
+  const analysis = analyzeFeedback(conversations, featureRequests, config, deflected);
 
   const dataSources = [
     ...(conversations.length > 0 ? ["helpscout_tickets"] : []),
     ...(featureRequests.length > 0 ? ["productlift_votes"] : []),
+    ...(deflected.length > 0 ? ["chatbase_conversations"] : []),
   ];
 
   console.error(
@@ -329,6 +436,7 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
   return {
     conversations,
     featureRequests,
+    deflected,
     analysis,
     piiCategoriesRedacted: [...piiCategories],
     dataSources,
@@ -342,13 +450,15 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
 server.registerTool("synthesize_feedback", {
   title: "Synthesize Customer Feedback",
   description:
-    "Cross-reference support tickets (HelpScout) and feature requests (ProductLift) " +
-    "to find convergent signals. Returns theme-matched analysis with priority scores. " +
-    "Convergent themes (appearing in both sources) get a 2x priority boost. " +
+    "Cross-reference support tickets (HelpScout), feature requests (ProductLift) and AI " +
+    "support agent conversations (Chatbase) to find convergent signals. Returns theme-matched " +
+    "analysis with priority scores. Convergent themes (appearing in both support and feature " +
+    "requests) get a 2x priority boost. Chat conversations count toward frequency and carry a " +
+    "self_serve_failure_rate per theme, but do not change the boost. " +
     "Scoring follows the pm-copilot://methodology resource; scores are normalized " +
     "within a call and not comparable across calls. This is the lower-level analysis " +
     "tool — use generate_product_plan for a ranked plan with KPI context. " +
-    `Configured portals: ${describePortals()}`,
+    `Configured portals: ${describePortals()}. Configured Chatbase agents: ${describeAgents()}`,
   inputSchema: {
     timeframe_days: z
       .number()
@@ -382,6 +492,10 @@ server.registerTool("synthesize_feedback", {
       .string()
       .optional()
       .describe("ProductLift portal name to filter by (optional)"),
+    agent_name: z
+      .string()
+      .optional()
+      .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
     detail_level: z
       .enum(["summary", "standard", "full"])
       .default("summary")
@@ -392,7 +506,7 @@ server.registerTool("synthesize_feedback", {
         "'full' (~600KB): all data points — for export/dashboard use, not LLM consumption."
       ),
   },
-}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, detail_level }) => {
+}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, detail_level }) => {
   try {
     // Resolve name → ID at the handler boundary; the cache key only ever sees an ID.
     const resolvedMailboxId = await resolveMailboxId(mailbox_name, mailbox_id);
@@ -401,6 +515,7 @@ server.registerTool("synthesize_feedback", {
       top_voted_limit,
       mailbox_id: resolvedMailboxId,
       portal_name,
+      agent_name,
     });
 
     if (data.fetchFailed) {
@@ -419,7 +534,8 @@ server.registerTool("synthesize_feedback", {
       data.analysis,
       detail_level,
       data.conversations,
-      data.featureRequests
+      data.featureRequests,
+      data.deflected
     );
 
     return {
@@ -433,6 +549,7 @@ server.registerTool("synthesize_feedback", {
               mailbox_id: resolvedMailboxId ?? null,
               mailbox_name: mailbox_name ?? null,
               portal_name: portal_name ?? "all",
+              agent_name: agent_name ?? (chatbaseClients.length > 0 ? "all" : null),
               top_voted_limit,
               fetched_at: new Date().toISOString(),
               pii_scrubbing_applied: true,
@@ -464,6 +581,8 @@ interface PlanPriorityForRender {
     total_data_points: number;
     support_tickets: number;
     feature_requests: number;
+    ai_chat_conversations?: number;
+    self_serve_failure_rate?: number | null;
   };
   evidence_summary: string;
   customer_quotes: string[];
@@ -477,6 +596,7 @@ function renderPlanMarkdown(args: {
     total_signals_analyzed: number;
     reactive_signals: number;
     proactive_signals: number;
+    deflected_signals?: number;
     themes_detected: number;
     convergent_themes: number;
     unmatched_signals: number;
@@ -495,23 +615,49 @@ function renderPlanMarkdown(args: {
       `sources: ${args.dataSources.join(", ") || "none"}_`
   );
   lines.push("");
+  const signalParts = [
+    `${summary.reactive_signals} support tickets`,
+    `${summary.proactive_signals} feature requests`,
+  ];
+  if (summary.deflected_signals !== undefined) {
+    signalParts.push(`${summary.deflected_signals} AI chat conversations`);
+  }
   lines.push(
     `**Signals:** ${summary.total_signals_analyzed} analyzed ` +
-      `(${summary.reactive_signals} support tickets, ${summary.proactive_signals} feature requests) · ` +
+      `(${signalParts.join(", ")}) · ` +
       `${summary.themes_detected} themes (${summary.convergent_themes} convergent) · ` +
       `${summary.unmatched_signals} unmatched`
   );
   lines.push("");
 
   if (args.priorities.length > 0) {
+    // The chat column only earns its place when a Chatbase source is configured.
+    const hasChat = args.priorities.some(
+      (p) => p.evidence.ai_chat_conversations !== undefined
+    );
     lines.push("## Priorities");
     lines.push("");
-    lines.push("| # | Theme | Score | Tickets | FRs | Signal |");
-    lines.push("|---|-------|------:|--------:|----:|--------|");
+    if (hasChat) {
+      lines.push("| # | Theme | Score | Tickets | FRs | Chats | Self-serve fail | Signal |");
+      lines.push("|---|-------|------:|--------:|----:|------:|----------------:|--------|");
+    } else {
+      lines.push("| # | Theme | Score | Tickets | FRs | Signal |");
+      lines.push("|---|-------|------:|--------:|----:|--------|");
+    }
     for (const p of args.priorities) {
+      const chatCells = hasChat
+        ? `${p.evidence.ai_chat_conversations ?? 0} | ` +
+          `${
+            p.evidence.self_serve_failure_rate === undefined ||
+            p.evidence.self_serve_failure_rate === null
+              ? "—"
+              : `${Math.round(p.evidence.self_serve_failure_rate * 100)}%`
+          } | `
+        : "";
       lines.push(
         `| ${p.rank} | ${p.theme} | ${p.priority_score} | ` +
           `${p.evidence.support_tickets} | ${p.evidence.feature_requests} | ` +
+          chatCells +
           `${p.convergent ? "Convergent" : p.signal_type} |`
       );
     }
@@ -555,13 +701,13 @@ function renderPlanMarkdown(args: {
 server.registerTool("generate_product_plan", {
   title: "Generate Product Plan",
   description:
-    "Build a prioritized product plan by cross-referencing HelpScout support tickets " +
-    "and ProductLift feature requests. Optionally accepts business metrics from other " +
-    "MCP servers (Metabase, GA, etc.) via kpi_context to inform prioritization. " +
-    "References the pm-copilot://methodology resource for planning framework. " +
-    "Returns top priorities with evidence, customer quotes, and recommended actions. " +
+    "Build a prioritized product plan by cross-referencing HelpScout support tickets, " +
+    "ProductLift feature requests, and Chatbase AI support agent conversations. Optionally " +
+    "accepts business metrics from other MCP servers (Metabase, GA, etc.) via kpi_context to " +
+    "inform prioritization. References the pm-copilot://methodology resource for planning " +
+    "framework. Returns top priorities with evidence, customer quotes, and recommended actions. " +
     "Use synthesize_feedback instead for the underlying theme analysis without plan framing. " +
-    `Configured portals: ${describePortals()}`,
+    `Configured portals: ${describePortals()}. Configured Chatbase agents: ${describeAgents()}`,
   inputSchema: {
     timeframe_days: z
       .number()
@@ -595,6 +741,10 @@ server.registerTool("generate_product_plan", {
       .string()
       .optional()
       .describe("ProductLift portal name to filter by (optional)"),
+    agent_name: z
+      .string()
+      .optional()
+      .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
     kpi_context: z
       .string()
       .optional()
@@ -633,16 +783,21 @@ server.registerTool("generate_product_plan", {
         "'markdown': a ready-to-read product brief (ranked table + quotes) for planning docs."
       ),
   },
-}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, kpi_context, max_priorities, preview_only, detail_level, format }) => {
+}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, kpi_context, max_priorities, preview_only, detail_level, format }) => {
   try {
     // Preview mode: show what would be sent without fetching
     if (preview_only) {
       const previewSources = ["helpscout_tickets"];
       if (portalConfigs.length > 0) previewSources.push("productlift_votes");
+      if (chatbaseClients.length > 0) previewSources.push("chatbase_conversations");
 
       const filteredPortals = portal_name
         ? portalConfigs.filter((c) => c.name.toLowerCase() === portal_name.toLowerCase()).map((c) => c.name)
         : portalConfigs.map((c) => c.name);
+
+      const filteredAgents = agent_name
+        ? agentConfigs.filter((a) => a.name.toLowerCase() === agent_name.toLowerCase()).map((a) => a.name)
+        : agentConfigs.map((a) => a.name);
 
       return {
         content: [
@@ -666,6 +821,15 @@ server.registerTool("generate_product_plan", {
                   top_voted_limit,
                   fields_sent: ["title (PII-scrubbed)", "description (PII-scrubbed)", "vote count", "comment count", "status", "timestamps"],
                   fields_NOT_sent: ["comment text (not fetched by this tool)", "voter identities", "commenter names and emails"],
+                },
+                chatbase: {
+                  will_fetch: chatbaseClients.length > 0
+                    ? "AI support agent conversations, customer turns only"
+                    : "SKIPPED (not configured)",
+                  agents: filteredAgents,
+                  timeframe_days,
+                  fields_sent: ["customer messages (PII-scrubbed)", "channel", "answer confidence (min_score)", "turn count", "created timestamp"],
+                  fields_NOT_sent: ["assistant/bot replies", "captured lead form submissions", "end-user identifiers", "country"],
                 },
                 pii_scrubbing: {
                   enabled: true,
@@ -693,6 +857,7 @@ server.registerTool("generate_product_plan", {
       top_voted_limit,
       mailbox_id: resolvedMailboxId,
       portal_name,
+      agent_name,
     });
 
     if (data.fetchFailed) {
@@ -708,8 +873,11 @@ server.registerTool("generate_product_plan", {
     }
 
     // Build lookup maps for quote extraction
-    const { convMap: conversationMap, reqMap: featureRequestMap } =
-      buildLookupMaps(data.conversations, data.featureRequests);
+    const {
+      convMap: conversationMap,
+      reqMap: featureRequestMap,
+      deflectedMap,
+    } = buildLookupMaps(data.conversations, data.featureRequests, data.deflected);
 
     // Build priorities from top themes
     const topThemes = data.analysis.themes.slice(0, max_priorities);
@@ -718,7 +886,9 @@ server.registerTool("generate_product_plan", {
       const quotes = extractQuotesForTheme(
         theme.data_points,
         conversationMap,
-        featureRequestMap
+        featureRequestMap,
+        3,
+        deflectedMap
       );
 
       const base = {
@@ -733,6 +903,11 @@ server.registerTool("generate_product_plan", {
           total_data_points: theme.data_points.length,
           support_tickets: theme.reactive_count,
           feature_requests: theme.proactive_count,
+          ...(theme.deflected_count > 0 && {
+            ai_chat_conversations: theme.deflected_count,
+            self_serve_failure_rate: theme.self_serve_failure_rate,
+            mean_answer_confidence: theme.mean_answer_confidence,
+          }),
           ...(detail_level !== "summary" && {
             frequency_score: theme.frequency_score,
             severity_score: theme.severity_score,
@@ -770,6 +945,9 @@ server.registerTool("generate_product_plan", {
         total_signals_analyzed: data.analysis.total_data_points,
         reactive_signals: data.analysis.reactive_count,
         proactive_signals: data.analysis.proactive_count,
+        ...(data.analysis.deflected_count > 0 && {
+          deflected_signals: data.analysis.deflected_count,
+        }),
         themes_detected: data.analysis.themes.length,
         convergent_themes: data.analysis.themes.filter((t) => t.convergent).length,
         unmatched_signals: data.analysis.unmatched_count,
@@ -941,9 +1119,10 @@ server.registerTool("get_feature_requests", {
 server.registerTool("list_sources", {
   title: "List Configured Sources",
   description:
-    "List the data sources this server is connected to: HelpScout mailboxes (id + name) and " +
-    "ProductLift portals (name + url). Use these names with the mailbox_name / portal_name " +
-    "parameters on the other tools. Read-only; never returns API keys or customer data.",
+    "List the data sources this server is connected to: HelpScout mailboxes (id + name), " +
+    "ProductLift portals (name + url), and Chatbase agents (name). Use these names with the " +
+    "mailbox_name / portal_name / agent_name parameters on the other tools. Read-only; never " +
+    "returns API keys or customer data.",
   inputSchema: {},
 }, async () => {
   try {
@@ -953,10 +1132,20 @@ server.registerTool("list_sources", {
       baseUrl: c.baseUrl,
     }));
 
+    // Agent ids are not secrets, but the account-wide API key lives outside this
+    // config and is never included.
+    const chatbase_agents = agentConfigs.map((a) => ({
+      name: a.name,
+      agentId: a.agentId,
+    }));
+
     let helpscout_mailboxes: Mailbox[] = [];
     const warnings: string[] = [];
     if (portalConfigError) {
       warnings.push(`ProductLift config error: ${portalConfigError}`);
+    }
+    if (agentConfigError) {
+      warnings.push(`Chatbase config error: ${agentConfigError}`);
     }
     try {
       helpscout_mailboxes = await helpscout.fetchMailboxes();
@@ -975,6 +1164,7 @@ server.registerTool("list_sources", {
               fetched_at: new Date().toISOString(),
               helpscout_mailboxes,
               productlift_portals,
+              chatbase_agents,
               ...(warnings.length > 0 && { warnings }),
             },
             null,

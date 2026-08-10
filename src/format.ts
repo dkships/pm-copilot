@@ -8,6 +8,7 @@
 
 import type { Conversation } from "./helpscout.js";
 import type { FeatureRequest } from "./productlift.js";
+import type { ChatbaseConversation } from "./chatbase.js";
 import type {
   AnalysisResult,
   DetailLevel,
@@ -15,6 +16,7 @@ import type {
   ThemeMatch,
   FormattedConversation,
   FormattedFeatureRequest,
+  FormattedDeflectedConversation,
 } from "./feedback-analyzer.js";
 import { scrubPii, scrubPiiArray } from "./pii-scrubber.js";
 
@@ -84,6 +86,47 @@ export function formatFeatureRequest(
   };
 }
 
+/**
+ * Chat widgets take unbounded free text, so this is the widest PII surface of
+ * the three sources. Deliberately excluded and never returned:
+ *   - assistant turns (the bot's own words are not customer voice)
+ *   - `country` (per-conversation geo adds no PM value and narrows identity)
+ *   - `form_submission` (captured lead names, emails and phone numbers)
+ *   - `userId` / any end-user identifier
+ * What remains is customer turns, scrubbed, plus the confidence score.
+ */
+export function formatDeflectedConversation(
+  conv: ChatbaseConversation,
+  agentName: string,
+  piiSink: Set<string>
+): FormattedDeflectedConversation {
+  const rawCustomerTurns = (conv.messages ?? [])
+    .filter((m) => m.role === "user")
+    .map((m) => m.content ?? "")
+    .filter((t) => t.trim().length > 0);
+
+  const { texts: customerMessages, piiCategoriesFound } = scrubPiiArray(rawCustomerTurns);
+  for (const cat of piiCategoriesFound) piiSink.add(cat);
+
+  const confidence =
+    typeof conv.min_score === "number" && Number.isFinite(conv.min_score)
+      ? conv.min_score
+      : null;
+
+  return {
+    id: conv.id,
+    // The opening customer turn stands in for a title — Chatbase's auto-titles
+    // are v2-only, and the first question is the clearer intent signal.
+    title: (customerMessages[0] ?? "").replace(/\s+/g, " ").trim(),
+    agent: agentName,
+    channel: conv.source ?? "unknown",
+    customerMessages,
+    turnCount: customerMessages.length,
+    answerConfidence: confidence,
+    createdAt: conv.created_at,
+  };
+}
+
 // ── Agent response detection ──
 
 const AGENT_RESPONSE_PATTERNS: RegExp[] = [
@@ -142,23 +185,30 @@ export function toErrorResult(error: unknown) {
 
 export function buildLookupMaps(
   conversations: FormattedConversation[],
-  featureRequests: FormattedFeatureRequest[]
+  featureRequests: FormattedFeatureRequest[],
+  deflected: FormattedDeflectedConversation[] = []
 ): {
   convMap: Map<string, FormattedConversation>;
   reqMap: Map<string, FormattedFeatureRequest>;
+  deflectedMap: Map<string, FormattedDeflectedConversation>;
 } {
   const convMap = new Map<string, FormattedConversation>();
   for (const conv of conversations) convMap.set(`hs-${conv.id}`, conv);
   const reqMap = new Map<string, FormattedFeatureRequest>();
   for (const req of featureRequests) reqMap.set(`pl-${req.id}`, req);
-  return { convMap, reqMap };
+  const deflectedMap = new Map<string, FormattedDeflectedConversation>();
+  for (const conv of deflected) deflectedMap.set(`cb-${conv.id}`, conv);
+  return { convMap, reqMap, deflectedMap };
 }
 
 export function signalTypeOf(
   theme: ThemeMatch
-): "convergent" | "reactive" | "proactive" {
+): "convergent" | "reactive" | "proactive" | "deflected" {
   if (theme.convergent) return "convergent";
-  return theme.reactive_count > 0 ? "reactive" : "proactive";
+  if (theme.reactive_count > 0) return "reactive";
+  if (theme.proactive_count > 0) return "proactive";
+  // Only chat conversations mention it — nobody has filed a ticket or a request.
+  return "deflected";
 }
 
 const MAX_TITLES = 50;
@@ -184,14 +234,28 @@ export function extractQuotesForTheme(
   themeDataPoints: Array<{ id: string; source: SignalType; title: string }>,
   conversationMap: Map<string, FormattedConversation>,
   featureRequestMap: Map<string, FormattedFeatureRequest>,
-  maxQuotes: number = 3
+  maxQuotes: number = 3,
+  deflectedMap: Map<string, FormattedDeflectedConversation> = new Map()
 ): string[] {
   const quotes: string[] = [];
 
   for (const dp of themeDataPoints) {
     if (quotes.length >= maxQuotes) break;
 
-    if (dp.source === "REACTIVE") {
+    if (dp.source === "DEFLECTED") {
+      const conv = deflectedMap.get(dp.id);
+      if (!conv) continue;
+      // role === "user" already guarantees customer voice, so the agent-text
+      // heuristics that the HelpScout path needs do not apply here.
+      const msg = (conv.customerMessages[0] ?? "").replace(/\s+/g, " ").trim();
+      if (!msg) continue;
+      const truncated = msg.length > 200 ? msg.slice(0, 197) + "..." : msg;
+      const confidence =
+        conv.answerConfidence === null
+          ? ""
+          : `, answer confidence ${conv.answerConfidence.toFixed(2)}`;
+      quotes.push(`[AI chat${confidence}] "${truncated}"`);
+    } else if (dp.source === "REACTIVE") {
       const conv = conversationMap.get(dp.id);
       if (!conv) continue;
 
@@ -231,13 +295,23 @@ export function extractQuotesForTheme(
 // ── Detail level trimming ──
 
 export function buildEvidenceSummary(theme: ThemeMatch): string {
-  const total = theme.reactive_count + theme.proactive_count;
+  // deflected_count is tolerated as absent — an analysis produced before the
+  // Chatbase source existed still has to summarise cleanly rather than as NaN.
+  const deflectedCount = theme.deflected_count ?? 0;
+  const total = theme.reactive_count + theme.proactive_count + deflectedCount;
   const parts: string[] = [];
   if (theme.reactive_count > 0) parts.push(`${theme.reactive_count} support tickets`);
   if (theme.proactive_count > 0) parts.push(`${theme.proactive_count} feature requests`);
+  if (deflectedCount > 0) parts.push(`${deflectedCount} AI chat conversations`);
   let summary = `${total} signals (${parts.join(", ")}).`;
   if (theme.convergent) {
     summary += " Convergent — appears in both support and feature requests (2x priority boost).";
+  }
+  if (theme.self_serve_failure_rate != null && deflectedCount > 0) {
+    const failPct = Math.round(theme.self_serve_failure_rate * 100);
+    summary +=
+      ` The AI agent answered with low confidence in ${failPct}% of those chats` +
+      " — customers ask about this and self-serve often does not resolve it.";
   }
   return summary;
 }
@@ -246,18 +320,24 @@ export function trimAnalysisForDetail(
   analysis: AnalysisResult,
   level: DetailLevel,
   conversations: FormattedConversation[],
-  featureRequests: FormattedFeatureRequest[]
+  featureRequests: FormattedFeatureRequest[],
+  deflected: FormattedDeflectedConversation[] = []
 ): unknown {
   if (level === "full") return analysis;
 
-  const { convMap, reqMap } = buildLookupMaps(conversations, featureRequests);
+  const { convMap, reqMap, deflectedMap } = buildLookupMaps(
+    conversations,
+    featureRequests,
+    deflected
+  );
 
   const themes = analysis.themes.map((theme) => {
     const quotes = extractQuotesForTheme(
       theme.data_points,
       convMap,
       reqMap,
-      3
+      3,
+      deflectedMap
     );
 
     const base = {
@@ -269,6 +349,11 @@ export function trimAnalysisForDetail(
       signal_type: signalTypeOf(theme),
       reactive_count: theme.reactive_count,
       proactive_count: theme.proactive_count,
+      ...(theme.deflected_count > 0 && {
+        deflected_count: theme.deflected_count,
+        self_serve_failure_rate: theme.self_serve_failure_rate,
+        mean_answer_confidence: theme.mean_answer_confidence,
+      }),
       evidence_summary: buildEvidenceSummary(theme),
       representative_quotes: quotes,
     };
@@ -305,6 +390,7 @@ export function trimAnalysisForDetail(
     total_data_points: analysis.total_data_points,
     reactive_count: analysis.reactive_count,
     proactive_count: analysis.proactive_count,
+    ...(analysis.deflected_count > 0 && { deflected_count: analysis.deflected_count }),
     themes,
     emerging_themes,
     unmatched_count: analysis.unmatched_count,

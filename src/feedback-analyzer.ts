@@ -4,7 +4,15 @@ import { fileURLToPath } from "node:url";
 
 // ── Types ──
 
-export type SignalType = "REACTIVE" | "PROACTIVE";
+/**
+ * REACTIVE  — support tickets: something is broken.
+ * PROACTIVE — feature requests: something is wanted.
+ * DEFLECTED — AI support agent conversations: something was asked and answered
+ *             (or not) without ever becoming a ticket. Counts toward frequency
+ *             like any other signal, but contributes to neither the severity nor
+ *             the vote-momentum term, and does not affect the convergence boost.
+ */
+export type SignalType = "REACTIVE" | "PROACTIVE" | "DEFLECTED";
 export type DetailLevel = "summary" | "standard" | "full";
 
 export interface DataPoint {
@@ -19,6 +27,9 @@ export interface DataPoint {
     comments_count?: number;
     thread_count?: number;
     portal?: string;
+    agent?: string;
+    /** Lowest answer confidence in a deflected conversation, 0–1. */
+    answer_confidence?: number | null;
   };
 }
 
@@ -28,11 +39,21 @@ export interface ThemeMatch {
   category: string;
   reactive_count: number;
   proactive_count: number;
+  deflected_count: number;
   convergent: boolean;
   frequency_score: number;
   severity_score: number;
   vote_momentum_score: number;
   priority_score: number;
+  /**
+   * Share of this theme's deflected conversations where the AI agent's lowest
+   * answer confidence fell below SELF_SERVE_FAILURE_THRESHOLD. High values mean
+   * customers ask about this and self-serve does not resolve it. Null when the
+   * theme has no deflected signals carrying a confidence score.
+   */
+  self_serve_failure_rate: number | null;
+  /** Mean lowest-answer-confidence across this theme's deflected conversations. */
+  mean_answer_confidence: number | null;
   data_points: Array<{ id: string; source: SignalType; title: string }>;
 }
 
@@ -48,6 +69,7 @@ export interface AnalysisResult {
   total_data_points: number;
   reactive_count: number;
   proactive_count: number;
+  deflected_count: number;
   themes: ThemeMatch[];
   emerging_themes: EmergingTheme[];
   unmatched_count: number;
@@ -81,6 +103,21 @@ export interface FormattedConversation {
   preview: string;
   customerMessages: string[];
   threadCount: number;
+}
+
+export interface FormattedDeflectedConversation {
+  id: string;
+  /** Chatbase auto-titles are not available on the v1 endpoint; this is the
+   *  customer's opening message, which is a better theme signal anyway. */
+  title: string;
+  agent: string;
+  /** Widget or Iframe, API, WhatsApp, … */
+  channel: string;
+  /** Customer turns only. Assistant replies never leave the server. */
+  customerMessages: string[];
+  turnCount: number;
+  answerConfidence: number | null;
+  createdAt: string;
 }
 
 export interface FormattedFeatureRequest {
@@ -140,6 +177,21 @@ function conversationToDataPoint(conv: FormattedConversation): DataPoint {
     metadata: {
       tags: conv.tags,
       thread_count: conv.threadCount,
+    },
+  };
+}
+
+function deflectedToDataPoint(conv: FormattedDeflectedConversation): DataPoint {
+  const textParts = [conv.title, ...conv.customerMessages];
+  return {
+    id: `cb-${conv.id}`,
+    source: "DEFLECTED",
+    title: conv.title,
+    text: textParts.join(" ").toLowerCase(),
+    created_at: conv.createdAt,
+    metadata: {
+      agent: conv.agent,
+      answer_confidence: conv.answerConfidence,
     },
   };
 }
@@ -256,6 +308,30 @@ function computeSeverityScore(points: DataPoint[]): number {
   return Math.min(totalScore / reactive.length, 100);
 }
 
+/** Below this, treat the AI agent as having failed to resolve the question. */
+const SELF_SERVE_FAILURE_THRESHOLD = 0.5;
+
+function computeDeflectionQuality(points: DataPoint[]): {
+  self_serve_failure_rate: number | null;
+  mean_answer_confidence: number | null;
+} {
+  const scores = points
+    .filter((p) => p.source === "DEFLECTED")
+    .map((p) => p.metadata.answer_confidence)
+    .filter((s): s is number => typeof s === "number" && Number.isFinite(s));
+
+  if (scores.length === 0) {
+    return { self_serve_failure_rate: null, mean_answer_confidence: null };
+  }
+
+  const failures = scores.filter((s) => s < SELF_SERVE_FAILURE_THRESHOLD).length;
+  const mean = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+  return {
+    self_serve_failure_rate: round2(failures / scores.length),
+    mean_answer_confidence: round2(mean),
+  };
+}
+
 function computeVoteMomentum(points: DataPoint[]): number {
   const proactive = points.filter((p) => p.source === "PROACTIVE");
   if (proactive.length === 0) return 0;
@@ -347,12 +423,14 @@ function detectEmergingThemes(
 export function analyzeFeedback(
   conversations: FormattedConversation[],
   featureRequests: FormattedFeatureRequest[],
-  config: ThemesConfig
+  config: ThemesConfig,
+  deflected: FormattedDeflectedConversation[] = []
 ): AnalysisResult {
   // Normalize to DataPoints
   const dataPoints: DataPoint[] = [
     ...conversations.map(conversationToDataPoint),
     ...featureRequests.map(featureRequestToDataPoint),
+    ...deflected.map(deflectedToDataPoint),
   ];
 
   // Match data points to themes. Compile keywords once per run — the config
@@ -401,6 +479,10 @@ export function analyzeFeedback(
 
     const reactiveCount = points.filter((p) => p.source === "REACTIVE").length;
     const proactiveCount = points.filter((p) => p.source === "PROACTIVE").length;
+    const deflectedCount = points.filter((p) => p.source === "DEFLECTED").length;
+    // Convergence stays a support-plus-requests test. Deflected signals are
+    // evidence, not a third leg of the highest-confidence rule — folding them in
+    // would change every published priority score.
     const convergent = reactiveCount > 0 && proactiveCount > 0;
 
     const frequencyScore = (frequencyCounts[i]! / maxFrequency) * 100;
@@ -421,11 +503,13 @@ export function analyzeFeedback(
       category: theme.category,
       reactive_count: reactiveCount,
       proactive_count: proactiveCount,
+      deflected_count: deflectedCount,
       convergent,
       frequency_score: round2(frequencyScore),
       severity_score: round2(severityScore),
       vote_momentum_score: round2(voteMomentumScore),
       priority_score: round2(priorityScore),
+      ...computeDeflectionQuality(points),
       data_points: points.map((p) => ({
         id: p.id,
         source: p.source,
@@ -452,6 +536,7 @@ export function analyzeFeedback(
     total_data_points: dataPoints.length,
     reactive_count: conversations.length,
     proactive_count: featureRequests.length,
+    deflected_count: deflected.length,
     themes,
     emerging_themes: emergingThemes,
     unmatched_count: unmatchedPoints.length,
