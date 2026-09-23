@@ -4,6 +4,11 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Changed
+
+- `zod` 4.4.3 → 4.6.5 and `@types/node` 26.2.0 → 26.6.2 (#41). Published tool schemas are
+  byte-identical under the new `zod`.
+
 ## [1.6.0] — 2026-09-22
 
 Opt-in comment analysis, bounded feature-request fetches, and much faster ProductLift paging.
