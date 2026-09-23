@@ -181,7 +181,14 @@ export class ProductLiftClient {
         { skip: String(skip), limit: String(PAGE_SIZE) }
       );
 
-      const data = page.data ?? [];
+      // A 200 with no data array (an error body) must fail the portal, not
+      // end paging early and get cached as the full list.
+      if (!Array.isArray(page.data)) {
+        throw new Error(
+          `ProductLift portal "${this.portal.name}" returned a malformed page at skip=${skip}`
+        );
+      }
+      const data = page.data;
       allPosts.push(...data);
 
       if (!page.hasMore || data.length === 0) {
@@ -264,11 +271,12 @@ export function parsePortalConfigs(): PortalConfig[] {
       const baseUrl = parts[1]?.trim();
       const apiKey = parts.slice(2).join("|").trim(); // rejoin — tokens may contain |
       if (!name || !baseUrl || !apiKey) {
-        // Never echo the entry: it holds the API key, and this message is
-        // surfaced in tool descriptions and list_sources.
+        // Never echo any part of the entry: it holds the API key (a key-only
+        // entry would even parse as the name), and this message is surfaced
+        // in tool descriptions and list_sources.
         throw new Error(
-          `Invalid PRODUCTLIFT_PORTALS format in entry ${index + 1}` +
-            `${name ? ` ("${name}")` : ""}. Expected "name|url|key" per entry.`
+          `Invalid PRODUCTLIFT_PORTALS format in entry ${index + 1}. ` +
+            'Expected "name|url|key" per entry.'
         );
       }
       return { name, baseUrl: baseUrl.replace(/\/$/, ""), apiKey };

@@ -58,6 +58,11 @@ describe("parsePortalConfigs", () => {
     expect(() => parsePortalConfigs()).not.toThrow(/SECRET/);
   });
 
+  it("never echoes a key-only entry as a portal name", () => {
+    vi.stubEnv("PRODUCTLIFT_PORTALS", "pl_SECRETKEY123");
+    expect(() => parsePortalConfigs()).not.toThrow(/SECRET/);
+  });
+
   it("falls back to single-portal env vars with a default name", () => {
     stubNoPortalEnv();
     vi.stubEnv("PRODUCTLIFT_PORTAL_URL", "https://roadmap.example.com/");
@@ -251,6 +256,20 @@ describe("ProductLiftClient resilience", () => {
     await expect(client().fetchPosts({ maxPages: 3, pageDelayMs: 0 })).rejects.toThrow(
       /more than 3 pages/
     );
+  });
+
+  it("fails the portal instead of caching a truncated list on a malformed page", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls++;
+        return calls === 1
+          ? json(page([post("1")], true))
+          : json({ error: "upstream", hasMore: true });
+      })
+    );
+    await expect(client().fetchPosts({ pageDelayMs: 0 })).rejects.toThrow(/malformed/);
   });
 
   it("reuses the post list across calls within the cache window", async () => {

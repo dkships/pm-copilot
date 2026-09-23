@@ -280,6 +280,13 @@ describe("signalTypeOf", () => {
   });
 });
 
+describe("toErrorResult scrubbing", () => {
+  it("scrubs PII out of an error message before it reaches the client", () => {
+    const result = toErrorResult(new Error("API said: contact jane@example.com"));
+    expect(result.content[0]?.text).toBe("Error: API said: contact [EMAIL REDACTED]");
+  });
+});
+
 describe("toErrorResult", () => {
   it("wraps an Error message and flags isError", () => {
     const result = toErrorResult(new Error("boom"));

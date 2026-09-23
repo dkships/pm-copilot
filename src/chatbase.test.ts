@@ -43,6 +43,12 @@ describe("parseAgentConfigs", () => {
     expect(() => parseAgentConfigs()).toThrow(/Expected "name\|agentId"/);
   });
 
+  it("never echoes the raw entry, which may be a pasted key", () => {
+    process.env.CHATBASE_AGENTS = "cb_SECRETKEY123";
+    expect(() => parseAgentConfigs()).toThrow(/entry 1/);
+    expect(() => parseAgentConfigs()).not.toThrow(/SECRET/);
+  });
+
   it("falls back to the single-agent form", () => {
     process.env.CHATBASE_AGENT_ID = "abc123";
     process.env.CHATBASE_AGENT_NAME = "portal-a";

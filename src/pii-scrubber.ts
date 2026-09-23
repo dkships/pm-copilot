@@ -52,19 +52,20 @@ function isIntlPhone(match: string): boolean {
 }
 
 const PII_PATTERNS: PiiPattern[] = [
-  // SSN: 123-45-6789, 123 45 6789 or 123.45.6789
+  // SSN: 123-45-6789 or 123 45 6789
   {
     name: "ssn",
-    pattern: /\b\d{3}[-\s.]\d{2}[-\s.]\d{4}\b/g,
+    pattern: /\b\d{3}[-\s]\d{2}[-\s]\d{4}\b/g,
     replacement: "[SSN REDACTED]",
   },
-  // Credit cards: 13-19 digit sequences with up to three separator chars
-  // (space, dash, dot, underscore) between digits. Matches Visa/MC (4-4-4-4),
-  // Amex (4-6-5), Discover, unseparated and "4111 - 1111 ..." forms.
-  // Luhn check filters false positives.
+  // Credit cards: 13-19 digit sequences with optional dash/space separators.
+  // Matches Visa/MC (4-4-4-4), Amex (4-6-5), Discover, and unseparated forms.
+  // Luhn check filters false positives. Wider separators (dots, " - ") were
+  // tried and rejected: they joined date ranges and IP lists into Luhn-valid
+  // runs, and let a trailing CVV push a real card past the Luhn check.
   {
     name: "credit_card",
-    pattern: /(?<!\d)(?:\d[-\s._]{0,3}){12,18}\d(?!\d)/g,
+    pattern: /(?<!\d)(?:\d[-\s]?){12,18}\d(?!\d)/g,
     replacement: "[CC REDACTED]",
     validate: isCardNumber,
   },
@@ -76,10 +77,12 @@ const PII_PATTERNS: PiiPattern[] = [
     replacement: "[EMAIL REDACTED]",
   },
   // International phone numbers with a + prefix: +44 20 7946 0958,
-  // +33 1 42 68 53 00. Chat channels such as WhatsApp carry these.
+  // +33 1 42 68 53 00. Chat channels such as WhatsApp carry these. Not after
+  // a word character (GMT+1, UTC+5), and not when a year follows the country
+  // code ("+1 2026-09-22").
   {
     name: "phone",
-    pattern: /\+\d{1,3}(?:[-.\s]?\(?\d{1,4}\)?){1,6}(?!\d)/g,
+    pattern: /(?<![\w+])\+\d{1,3}(?!\d)(?![-.\s]?\(?(?:19|20)\d\d\b)(?:[-.\s]?\(?\d{1,4}\)?){1,6}(?!\d)/g,
     replacement: "[PHONE REDACTED]",
     validate: isIntlPhone,
   },

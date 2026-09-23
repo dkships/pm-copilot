@@ -185,8 +185,9 @@ export function isLikelyAgentResponse(text: string): boolean {
 
 export function toErrorResult(error: unknown) {
   const message = error instanceof Error ? error.message : "Unknown error";
+  // Error text can carry API response bodies; scrub like every other output.
   return {
-    content: [{ type: "text" as const, text: `Error: ${message}` }],
+    content: [{ type: "text" as const, text: scrubPii(`Error: ${message}`).text }],
     isError: true as const,
   };
 }

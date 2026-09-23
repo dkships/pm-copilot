@@ -10,7 +10,8 @@ const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Make the project .env authoritative: override any stale value already exported
 // in the shell/parent environment (e.g. an old PRODUCTLIFT_PORTALS). Without this,
 // dotenv leaves pre-set vars untouched and edits to .env appear to have no effect.
-loadEnv({ path: resolve(PROJECT_ROOT, ".env"), override: true });
+// quiet: dotenv 17 otherwise logs to stdout, which is the MCP protocol channel.
+loadEnv({ path: resolve(PROJECT_ROOT, ".env"), override: true, quiet: true });
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -174,7 +175,7 @@ interface FetchedData {
   // instead of presenting an empty analysis as a successful result.
   fetchFailed: boolean;
   // True when any source or portal/agent failed. Such a result is returned
-  // but not cached, so a transient outage doesn't stick for the cache TTL.
+  // but cached only for PARTIAL_CACHE_TTL_MS, so a transient outage clears fast.
   partialFailure: boolean;
   fetchedAt: string;
 }
@@ -382,10 +383,16 @@ async function fetchProductLift(
 // ── Response cache ──
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// A result with a failed source is cached briefly: long enough to absorb a
+// burst of calls, short enough that a transient outage clears quickly. Not
+// zero, because some failures persist (a Chatbase plan without API access)
+// and would otherwise re-page every source on every call.
+const PARTIAL_CACHE_TTL_MS = 30 * 1000;
 
 interface CacheEntry {
   data: FetchedData;
   timestamp: number;
+  ttlMs: number;
 }
 
 const fetchCache = new Map<string, CacheEntry>();
@@ -401,7 +408,7 @@ function cacheKey(params: FetchParams): string {
 async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
   const key = cacheKey(params);
   const cached = fetchCache.get(key);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+  if (cached && Date.now() - cached.timestamp < cached.ttlMs) {
     const ageSeconds = ((Date.now() - cached.timestamp) / 1000).toFixed(0);
     console.error(`[pm-copilot] Cache hit (key=${key}, age=${ageSeconds}s)`);
     return cached.data;
@@ -410,15 +417,15 @@ async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> 
   console.error(`[pm-copilot] Cache miss (key=${key}), fetching fresh data...`);
   const data = await fetchAndAnalyze(params);
 
-  // Never cache a failed or partial fetch — a transient outage in one source
-  // shouldn't stick for 5 minutes.
-  if (!data.fetchFailed && !data.partialFailure) {
-    fetchCache.set(key, { data, timestamp: Date.now() });
+  // Never cache a total failure, and cache a partial one only briefly.
+  if (!data.fetchFailed) {
+    const ttlMs = data.partialFailure ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS;
+    fetchCache.set(key, { data, timestamp: Date.now(), ttlMs });
   }
 
   // Evict expired entries
   for (const [k, entry] of fetchCache) {
-    if (Date.now() - entry.timestamp >= CACHE_TTL_MS) fetchCache.delete(k);
+    if (Date.now() - entry.timestamp >= entry.ttlMs) fetchCache.delete(k);
   }
 
   return data;
@@ -1275,7 +1282,7 @@ server.registerTool("list_sources", {
       helpscout_mailboxes = await helpscout.fetchMailboxes();
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      warnings.push(`HelpScout mailbox fetch failed: ${msg}`);
+      warnings.push(scrubPii(`HelpScout mailbox fetch failed: ${msg}`).text);
       console.error(`[pm-copilot] list_sources HelpScout error: ${msg}`);
     }
 

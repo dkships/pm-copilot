@@ -157,20 +157,19 @@ describe("scrubPiiArray", () => {
 });
 
 describe("scrubPii hardening", () => {
-  it("redacts cards written with dots, underscores or padded separators", () => {
-    for (const card of [
-      "4111.1111.1111.1111",
-      "4111_1111_1111_1111",
-      "4111  1111  1111  1111",
-      "4111 - 1111 - 1111 - 1111",
-    ]) {
-      const r = scrubPii(`card ${card} declined`);
-      expect(r.text).toBe("card [CC REDACTED] declined");
-    }
+  it("still redacts a card followed by a CVV", () => {
+    expect(scrubPii("4111-1111-1111-1111 - 123").text).toBe("[CC REDACTED] - 123");
   });
 
-  it("redacts a dot-separated SSN", () => {
-    expect(scrubPii("ssn 123.45.6789").text).toBe("ssn [SSN REDACTED]");
+  it("leaves date ranges, IP lists and underscored ids alone", () => {
+    for (const text of [
+      "booked 2026-05-05 - 2026-05-07",
+      "ips 10.147.53.64 10.138.43.255",
+      "dates 02.16.2026 09.03.2026",
+      "order_123456_654321_123",
+    ]) {
+      expect(scrubPii(text).text).toBe(text);
+    }
   });
 
   it("redacts international numbers written with a + prefix", () => {
@@ -181,8 +180,16 @@ describe("scrubPii hardening", () => {
     }
   });
 
-  it("does not treat a short +N expression as a phone number", () => {
-    expect(scrubPii("rated +1 2 out of 5").text).toBe("rated +1 2 out of 5");
+  it("does not treat short +N expressions, timezones or years as phone numbers", () => {
+    for (const text of [
+      "rated +1 2 out of 5",
+      "meeting at GMT+1 2026 09 22",
+      "UTC+5 2026-09-22 14:30",
+      "+1 2026-09-22 renewal",
+      "went from 120 to +150 (2025) 300 users",
+    ]) {
+      expect(scrubPii(text).text).toBe(text);
+    }
   });
 
   it("scrubs long dotted runs in linear time (no ReDoS on the email pattern)", () => {

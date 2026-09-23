@@ -27,7 +27,8 @@
         "booked",
         "they book",
         "when they book",
-        "double booked"
+        "double booked",
+        "they booked"
       ],
       "category": "core"
     },
@@ -174,7 +175,11 @@
         "double booking",
         "outlook",
         "apple calendar",
-        "busy time"
+        "busy time",
+        "calendar connection",
+        "calendar connected",
+        "calendar syncing",
+        "calendar synced"
       ],
       "category": "integration"
     },
@@ -237,7 +242,9 @@
         "field type",
         "duplicate template",
         "form submit",
-        "form layout"
+        "form layout",
+        "form submission",
+        "form submitted"
       ],
       "category": "product"
     },
@@ -290,7 +297,9 @@
         "registration",
         "register",
         "too many attempts",
-        "verification code"
+        "verification code",
+        "log into",
+        "sign into"
       ],
       "category": "auth"
     },
@@ -377,7 +386,8 @@
         "stuck",
         "fail",
         "failing",
-        "unresponsive"
+        "unresponsive",
+        "page loading"
       ],
       "category": "reliability"
     },

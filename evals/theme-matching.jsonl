@@ -80,3 +80,7 @@
 {"id":"lm-004","register":"roadmap","source":"PROACTIVE","text":"Segment my audience by tag so I can send to a subset","expected_themes":["list-management"]}
 {"id":"lm-005","register":"chat","source":"REACTIVE","text":"i have duplicate contacts in my list","expected_themes":["list-management"]}
 {"id":"lm-006","register":"ticket","source":"REACTIVE","text":"Sending to my mailing list fails when the list is very small","expected_themes":["list-management","email-smtp","performance"]}
+{"id":"tk-024","register":"ticket","source":"REACTIVE","text":"I can't log into the dashboard since this morning","expected_themes":["login-auth"]}
+{"id":"tk-025","register":"ticket","source":"REACTIVE","text":"Calendar connection keeps dropping every few days","expected_themes":["calendar-sync"]}
+{"id":"tk-026","register":"ticket","source":"REACTIVE","text":"The form submitted twice when my customer clicked the button","expected_themes":["templates-editor"]}
+{"id":"ch-026","register":"chat","source":"REACTIVE","text":"calendar syncing stopped after i changed my password","expected_themes":["calendar-sync","login-auth"]}

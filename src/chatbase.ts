@@ -244,13 +244,16 @@ export function parseAgentConfigs(): AgentConfig[] {
       .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
-      .map((entry) => {
+      .map((entry, index) => {
         const parts = entry.split("|");
         const name = parts[0]?.trim();
         const agentId = parts[1]?.trim();
         if (!name || !agentId) {
+          // Don't echo the entry: a mis-pasted API key would land in tool
+          // descriptions and list_sources.
           throw new Error(
-            `Invalid CHATBASE_AGENTS format. Expected "name|agentId" per entry, got: ${entry}`
+            `Invalid CHATBASE_AGENTS format in entry ${index + 1}. ` +
+              'Expected "name|agentId" per entry.'
           );
         }
         return { name, agentId };
