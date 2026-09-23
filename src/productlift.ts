@@ -140,7 +140,10 @@ export class ProductLiftClient {
     const res = await this.apiGet<DataResponse<Comment[]> | PaginatedResponse<Comment>>(
       `/api/v1/posts/${postId}/comments`
     );
-    return Array.isArray(res.data) ? res.data : [res.data];
+    if (Array.isArray(res.data)) {
+      return res.data;
+    }
+    return res.data ? [res.data] : [];
   }
 
   async fetchFeatureRequests(
