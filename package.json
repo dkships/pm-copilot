@@ -1,6 +1,6 @@
 {
   "name": "@dkships/pm-copilot",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "MCP server that triangulates support tickets, feature requests and AI support agent chats to help PMs decide what to build next",
   "type": "module",
   "main": "dist/index.js",

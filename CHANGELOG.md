@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-09-23
+
+A drill-down from a ranked theme to the records behind it.
+
 ### Added
 
 - `get_theme_evidence`: drill into one theme and get the tickets, feature requests and chats
