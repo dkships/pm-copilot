@@ -191,8 +191,18 @@ export class HelpScoutClient {
         return this.apiGet(path, params, { ...retry, reauthenticated: true });
       }
       const text = await res.text();
+      // The token endpoint accepted the app's credentials moments ago, so a
+      // 403 here is about the account, not the keys: rotating the secret
+      // won't help.
+      const hint =
+        res.status === HTTP_FORBIDDEN
+          ? " HelpScout issued a token but rejected it, which usually means the user who " +
+            "owns this OAuth app was deactivated or lost access to the account. Create a new " +
+            "app from an active user's profile (My Apps) and update HELPSCOUT_APP_ID and " +
+            "HELPSCOUT_APP_SECRET."
+          : "";
       throw new Error(
-        `HelpScout auth expired or invalid (${res.status}): ${text}`
+        `HelpScout auth expired or invalid (${res.status}): ${text}.${hint}`
       );
     }
 

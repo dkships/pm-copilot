@@ -280,6 +280,7 @@ Frequency and vote momentum are normalized against the top theme in the same cal
 ## Troubleshooting
 
 - **`Missing HELPSCOUT_APP_ID or HELPSCOUT_APP_SECRET`.** Check that `.env` exists in the repo root and has both values.
+- **`HelpScout auth expired or invalid (403)` on every call.** If the token request succeeds but API calls get 403, the HelpScout user who owns the OAuth app was deactivated or lost access. Rotating the secret won't help; create a new app from an active user's profile and update both `HELPSCOUT_*` values.
 - **Changes aren't taking effect.** The client runs the compiled `dist/`. Run `npm run build` and restart the client.
 - **`No HelpScout mailbox named "…"`.** Run `list_sources` for exact names, or pass `mailbox_id`.
 - **`No portal found with name "…"` / `No ProductLift portal named "…"`.** The portal must be in `PRODUCTLIFT_PORTALS` (or the single-portal vars). Run `list_sources`.

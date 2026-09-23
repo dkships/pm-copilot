@@ -169,3 +169,19 @@ describe("HelpScoutClient recovery", () => {
     expect(apiCalls(fetchMock)).toBe(1);
   });
 });
+
+describe("HelpScoutClient 403 diagnosis", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("explains that a rejected fresh token means the app owner lost access", async () => {
+    stubFetchSequence([
+      new Response("Token associated with this request is no longer valid", { status: 403 }),
+    ]);
+    const client = new HelpScoutClient("id", "secret");
+    await expect(client.fetchMailboxes()).rejects.toThrow(
+      /user who owns this OAuth app.*deactivated or lost access/
+    );
+  });
+});
