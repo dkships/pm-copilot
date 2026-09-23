@@ -597,9 +597,9 @@ server.registerTool("synthesize_feedback", {
       .default("summary")
       .describe(
         "Level of detail in response. " +
-        "'summary' (default, ~20KB): scores, quotes, evidence summaries — optimized for LLM consumption. " +
-        "'standard' (~100KB): adds data point titles per theme. " +
-        "'full' (~600KB): all data points — for export/dashboard use, not LLM consumption."
+        "'summary' (default, ~15KB): scores, quotes, evidence summaries — optimized for LLM consumption. " +
+        "'standard' (~85KB): adds data point titles per theme. " +
+        "'full' (several hundred KB): all data points — for export/dashboard use, not LLM consumption."
       ),
   },
 }, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, source_filter, detail_level }) => {

@@ -4,26 +4,27 @@ Guidance for AI coding agents (Claude Code, Codex, Cursor, Aider, etc.) working 
 
 ## What this is
 
-MCP server connecting an LLM to customer signal data (HelpScout support tickets + ProductLift feature requests). Cross-source theme analysis and prioritized product planning.
+MCP server connecting an LLM to customer signal data (HelpScout support tickets, ProductLift feature requests, Chatbase AI support agent conversations). Cross-source theme analysis and prioritized product planning.
 
 ## Tech stack
 
-- TypeScript, ES modules, Node 18+
+- TypeScript, ES modules, Node 20+
 - `@modelcontextprotocol/sdk` with stdio transport
 - HelpScout API v2 (OAuth2 client credentials)
 - ProductLift API v1 (Bearer token, multi-portal)
+- Chatbase API v1 (Bearer token, multi-agent)
 
 ## Scope and boundaries
 
-- PII scrubbing on all customer text before analysis (SSN, CC, email, phone). See [SECURITY.md](SECURITY.md).
+- PII scrubbing on all customer text before analysis (SSN, CC, email, phone). Chatbase chat text is the widest PII surface: only `role: "user"` turns are read. See [SECURITY.md](SECURITY.md).
 - Never send unscrubbed customer text. Scrubbing happens at the format layer.
 - Return raw structured data from tools. Let the LLM do synthesis.
-- Partial-failure resilient: if one API is down, return data from the other plus a warnings array.
+- Partial-failure resilient: if one API is down, return data from the others plus a warnings array.
 
 ## Working rules
 
 - Use `registerTool` / `registerResource` for MCP registration (not deprecated `.tool()`)
-- All API clients in their own module (e.g., `helpscout.ts`, `productlift.ts`)
+- All API clients in their own module (e.g., `helpscout.ts`, `productlift.ts`, `chatbase.ts`)
 - Handle errors with `isError: true` responses
 - No `any` types. Use `as T` casts at API boundaries.
 - Theme config loaded at runtime via `fs.readFileSync` — edits don't require rebuild

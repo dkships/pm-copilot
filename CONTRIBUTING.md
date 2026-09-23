@@ -4,7 +4,7 @@ Thanks for your interest. This is a small, focused project. PRs welcome, especia
 
 - New customer signal sources (additional MCP-friendly support / roadmap tools)
 - Better PII detection (non-US formats, named-entity recognition)
-- Test coverage on `src/feedback-analyzer.ts` and `src/pii-scrubber.ts`
+- Theme vocabulary improvements that raise recall without new false positives (check with `npm run eval`)
 - Bug fixes with a regression test
 
 ## Getting set up
@@ -28,10 +28,38 @@ Node 20 or higher is required.
    ```bash
    npm run build
    npm test
+   npm run eval -- --min-f1 0.90
    npm run audit:ci
    ```
+   CI runs the same checks.
 4. Open a PR against `main`. Fill in the PR template. Link any related issue.
 5. CI must pass. A maintainer will review.
+
+## Commands
+
+```bash
+npm run build        # Compile TypeScript
+npm run dev          # Watch mode
+npm start            # Run the server
+npm test             # Vitest unit tests
+npm run eval         # Theme-matching eval (see docs/evaluation.md)
+npm run audit:ci     # Dependency audit gate
+```
+
+MCP clients run the compiled `dist/`, so rebuild and restart the client after source changes.
+
+### Local testing
+
+Call a tool in isolation without restarting your MCP client. Useful for iterating on changes and checking response sizes:
+
+```bash
+npm run build
+npm run tool -- --list
+npm run tool -- list_sources '{}'
+npm run tool -- get_feature_requests '{"portal_name":"<your-portal>","status":"open"}'
+```
+
+The runner prints the byte size of each response. Output may include your configured source names and URLs (and PII-scrubbed customer text), so redact before sharing.
 
 ## Code style
 

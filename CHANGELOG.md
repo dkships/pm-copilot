@@ -4,7 +4,58 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-09-22
+
+A reliability, privacy and docs pass. Scores shift slightly, so the methodology moves to v2.2.
+
+### Added
+
+- `source_filter` on the analysis tools, per-channel counts (`chatbase_sources`), and
+  `chatbase_conversation_sources` in `list_sources` (#38).
+- Read-only tool annotations on all four tools.
+- `npm run typecheck`, which type-checks the test files. CI runs it, and now also runs on Node 24.
+
+### Fixed
+
+- **PII:** the email pattern ran in quadratic time on long dotted or dashed runs (20k characters
+  took ~2.5s), and chat text is unbounded. Its quantifiers are now bounded. The scrubber also
+  catches cards written with dots, underscores or padded separators, dot-separated SSNs, and
+  `+`-prefixed international phone numbers. Feature-request URLs are scrubbed too, since
+  ProductLift builds the slug from the title.
+- A malformed `PRODUCTLIFT_PORTALS` entry echoed the entry, API key included, into tool
+  descriptions and `list_sources`.
+- A null description, comment body or comment author from ProductLift crashed the formatter and
+  dropped the whole portal.
+- A result where any source failed was cached for 5 minutes. Only fully successful fetches are
+  cached now, and `fetched_at` reports when the data was actually fetched.
+- ProductLift: 429s are retried instead of failing the portal, paging stops at 500 pages, and
+  failed comment fetches produce a warning instead of an empty list.
+- HelpScout re-authenticates once on a 401 and retries a 5xx, instead of discarding every page
+  already fetched. Retry-After values past one rate window fail fast in HelpScout, ProductLift and
+  Chatbase instead of sleeping inside a tool call.
+- Chatbase filters by whole UTC days, which let in up to a day of extra chats (a 1-day window
+  could return nearly two). Results are trimmed to the exact window.
+- An unknown `portal_name` on the analysis tools now warns, as `agent_name` already did.
+- An informational warning (unknown `source_filter`) no longer counts as a Chatbase failure.
+- `.env` is loaded from the repo root, not the working directory. Claude Desktop launches the
+  server elsewhere, so it exited with "Missing HELPSCOUT_APP_ID".
+- **Scoring (methodology v2.2):** recency used `exp(-age/7)`, a 4.85-day half-life, against the
+  documented 7 days. The tag boost took the first matching tag, so HelpScout's tag order changed
+  the score; it now takes the highest. Multi-word keywords matched as raw substrings ("sign in"
+  fired on "design in"); they now match on word boundaries. Theme eval unchanged at micro F1 0.974.
+
 ### Changed
+
+- `get_feature_requests` skips the comment call for posts reporting zero comments (39s to ~5s on
+  a 72-post portal), and each portal's post list is cached for 5 minutes, so varying parameters
+  no longer re-downloads every post.
+- Tool responses are compact JSON, about 20-26% fewer tokens. `npm run tool` still pretty-prints.
+- The server reads its version from `package.json`.
+- README cut from 27.7KB to ~13.6KB. Evaluation detail moved to `docs/evaluation.md`, the PII
+  exclusions to `SECURITY.md`, and the dev commands to `CONTRIBUTING.md`. Stale facts fixed across
+  `AGENTS.md`, `SECURITY.md`, `CONTRIBUTING.md` and the issue template.
+- Transitive `fast-uri`, `hono` and `qs` updated; `npm audit` had been failing CI on a high
+  `fast-uri` advisory.
 
 - **TypeScript 6.0.3 → 7.0.2** (#28), **`@types/node` 25.9.1 → 26.2.0** (#32), and
   **`actions/setup-node` 6 → 7** (#30). Three major bumps, no source changes needed for any of
@@ -256,7 +307,7 @@ de-identification policy, rather than moving the 1.4.0 tag.
 
 ### Changed
 
-- Genericized client-identifying content. The README composability example now uses `Product A` / `Product B` and is framed as illustrative rather than implying live customer data. `src/methodology.ts` no longer names specific products or quotes client-specific churn/scale figures. `CLAUDE.md` and `src/productlift.ts` use `roadmap.example.com` in example URLs. The `AppSumo-specific` block in the support-agent response filter (`src/index.ts`) was dropped; the remaining patterns are generic.
+- Genericized client-identifying content. The README composability example now uses `Product A` / `Product B` and is framed as illustrative rather than implying live customer data. `src/methodology.ts` no longer names specific products or quotes client-specific churn/scale figures. `CLAUDE.md` and `src/productlift.ts` use `roadmap.example.com` in example URLs. A client-specific block in the support-agent response filter (`src/index.ts`) was dropped; the remaining patterns are generic.
 - Bumped major dev/runtime deps: `typescript` 5 → 6, `vitest` 2 → 4, `zod` 3 → 4, `@types/node` 22 → 25.
 - Pinned `tsconfig.json` `compilerOptions.types` to `["node"]`. TypeScript 6's implicit `@types/*` inclusion stopped resolving `@types/node` once vitest 4 hoisted `@types/chai`, `@types/deep-eql`, and `@types/estree` as siblings — naming `node` explicitly is the cleanest fix and matches actual usage in `src/`.
 
