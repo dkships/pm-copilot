@@ -45,7 +45,7 @@ Loaded from `.env` via dotenv with `override: true` — `.env` values win over a
 
 †Chatbase needs both `CHATBASE_API_KEY` and one of `CHATBASE_AGENTS` / `CHATBASE_AGENT_ID`; a key
 alone configures nothing. API access requires a Chatbase Standard plan — a lower plan returns 403,
-which surfaces as a warning rather than failing the analysis. Not yet in `.env.example`.
+which surfaces as a warning rather than failing the analysis.
 
 ## Conventions
 

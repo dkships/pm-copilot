@@ -155,3 +155,47 @@ describe("scrubPiiArray", () => {
     expect(r.piiCategoriesFound).toEqual([]);
   });
 });
+
+describe("scrubPii hardening", () => {
+  it("still redacts a card followed by a CVV", () => {
+    expect(scrubPii("4111-1111-1111-1111 - 123").text).toBe("[CC REDACTED] - 123");
+  });
+
+  it("leaves date ranges, IP lists and underscored ids alone", () => {
+    for (const text of [
+      "booked 2026-05-05 - 2026-05-07",
+      "ips 10.147.53.64 10.138.43.255",
+      "dates 02.16.2026 09.03.2026",
+      "order_123456_654321_123",
+    ]) {
+      expect(scrubPii(text).text).toBe(text);
+    }
+  });
+
+  it("redacts international numbers written with a + prefix", () => {
+    for (const phone of ["+44 20 7946 0958", "+61 2 9374 4000", "+33 1 42 68 53 00", "+49 30 901820"]) {
+      const r = scrubPii(`whatsapp me on ${phone} today`);
+      expect(r.text).toBe("whatsapp me on [PHONE REDACTED] today");
+      expect(r.piiCategoriesFound).toContain("phone");
+    }
+  });
+
+  it("does not treat short +N expressions, timezones or years as phone numbers", () => {
+    for (const text of [
+      "rated +1 2 out of 5",
+      "meeting at GMT+1 2026 09 22",
+      "UTC+5 2026-09-22 14:30",
+      "+1 2026-09-22 renewal",
+      "went from 120 to +150 (2025) 300 users",
+    ]) {
+      expect(scrubPii(text).text).toBe(text);
+    }
+  });
+
+  it("scrubs long dotted runs in linear time (no ReDoS on the email pattern)", () => {
+    const hostile = "a.".repeat(20_000);
+    const start = performance.now();
+    scrubPii(hostile);
+    expect(performance.now() - start).toBeLessThan(250);
+  });
+});

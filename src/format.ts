@@ -55,9 +55,17 @@ export function formatFeatureRequest(
   req: FeatureRequest,
   piiSink: Set<string>
 ): FormattedFeatureRequest {
-  const titleScrub = scrubPii(req.title);
-  const descScrub = scrubPii(req.description);
-  for (const cat of [...titleScrub.piiCategoriesFound, ...descScrub.piiCategoriesFound]) {
+  // ProductLift fields can arrive null (deleted authors, empty descriptions);
+  // guard them the way formatConversation guards HelpScout's.
+  const titleScrub = scrubPii(req.title ?? "");
+  const descScrub = scrubPii(req.description ?? "");
+  // The URL slug is built from the title, so it can carry the same PII.
+  const urlScrub = scrubPii(req.url ?? "");
+  for (const cat of [
+    ...titleScrub.piiCategoriesFound,
+    ...descScrub.piiCategoriesFound,
+    ...urlScrub.piiCategoriesFound,
+  ]) {
     piiSink.add(cat);
   }
   return {
@@ -69,16 +77,16 @@ export function formatFeatureRequest(
     votes_count: req.votes_count ?? 0,
     comments_count: req.comments_count ?? 0,
     portal: req.portal,
-    url: req.url,
+    url: req.url === undefined ? undefined : urlScrub.text,
     created_at: req.created_at,
     updated_at: req.updated_at,
-    comments: req.comments.map((c) => {
-      const commentScrub = scrubPii(c.comment);
+    comments: (req.comments ?? []).map((c) => {
+      const commentScrub = scrubPii(c.comment ?? "");
       for (const cat of commentScrub.piiCategoriesFound) piiSink.add(cat);
       // Commenter names are deliberately dropped — only the role leaves the
       // server, consistent with the voter-identity exclusion.
       return {
-        role: c.author.role,
+        role: c.author?.role ?? "unknown",
         comment: commentScrub.text,
         created_at: c.created_at,
       };
@@ -177,8 +185,9 @@ export function isLikelyAgentResponse(text: string): boolean {
 
 export function toErrorResult(error: unknown) {
   const message = error instanceof Error ? error.message : "Unknown error";
+  // Error text can carry API response bodies; scrub like every other output.
   return {
-    content: [{ type: "text" as const, text: `Error: ${message}` }],
+    content: [{ type: "text" as const, text: scrubPii(`Error: ${message}`).text }],
     isError: true as const,
   };
 }

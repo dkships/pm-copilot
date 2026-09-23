@@ -23,6 +23,32 @@ interface PiiPattern {
   name: string;
   pattern: RegExp;
   replacement: string;
+  // Optional second check on each match; a match that fails it is kept as-is.
+  validate?: (match: string) => boolean;
+}
+
+const CARD_MIN_DIGITS = 13;
+const CARD_MAX_DIGITS = 19;
+// E.164 allows at most 15 digits; below 8 a "+N ..." run is more likely a
+// score or version than a phone number.
+const INTL_PHONE_MIN_DIGITS = 8;
+const INTL_PHONE_MAX_DIGITS = 15;
+
+function digitCount(match: string): number {
+  return match.replace(/\D/g, "").length;
+}
+
+function isCardNumber(match: string): boolean {
+  const digits = match.replace(/\D/g, "");
+  if (digits.length < CARD_MIN_DIGITS || digits.length > CARD_MAX_DIGITS) {
+    return false;
+  }
+  return passesLuhn(digits);
+}
+
+function isIntlPhone(match: string): boolean {
+  const n = digitCount(match);
+  return n >= INTL_PHONE_MIN_DIGITS && n <= INTL_PHONE_MAX_DIGITS;
 }
 
 const PII_PATTERNS: PiiPattern[] = [
@@ -34,17 +60,31 @@ const PII_PATTERNS: PiiPattern[] = [
   },
   // Credit cards: 13-19 digit sequences with optional dash/space separators.
   // Matches Visa/MC (4-4-4-4), Amex (4-6-5), Discover, and unseparated forms.
-  // Luhn check below filters false positives.
+  // Luhn check filters false positives. Wider separators (dots, " - ") were
+  // tried and rejected: they joined date ranges and IP lists into Luhn-valid
+  // runs, and let a trailing CVV push a real card past the Luhn check.
   {
     name: "credit_card",
     pattern: /(?<!\d)(?:\d[-\s]?){12,18}\d(?!\d)/g,
     replacement: "[CC REDACTED]",
+    validate: isCardNumber,
   },
-  // Email addresses
+  // Email addresses. Quantifiers are bounded: an unbounded local part made
+  // scanning a long "a.a.a..." run quadratic (20k chars took seconds).
   {
     name: "email",
-    pattern: /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g,
+    pattern: /\b[A-Za-z0-9._%+\-]{1,256}@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,63}\b/g,
     replacement: "[EMAIL REDACTED]",
+  },
+  // International phone numbers with a + prefix: +44 20 7946 0958,
+  // +33 1 42 68 53 00. Chat channels such as WhatsApp carry these. Not after
+  // a word character (GMT+1, UTC+5), and not when a year follows the country
+  // code ("+1 2026-09-22").
+  {
+    name: "phone",
+    pattern: /(?<![\w+])\+\d{1,3}(?!\d)(?![-.\s]?\(?(?:19|20)\d\d\b)(?:[-.\s]?\(?\d{1,4}\)?){1,6}(?!\d)/g,
+    replacement: "[PHONE REDACTED]",
+    validate: isIntlPhone,
   },
   // Phone numbers: US formats with optional country code
   // +1 (555) 123-4567, 555-123-4567, 5551234567, (555) 123 4567
@@ -76,19 +116,17 @@ export function scrubPii(text: string): ScrubResult {
   const categoriesFound = new Set<string>();
   let scrubbed = text;
 
-  for (const { name, pattern, replacement } of PII_PATTERNS) {
+  for (const { name, pattern, replacement, validate } of PII_PATTERNS) {
     // Reset regex state
     pattern.lastIndex = 0;
 
-    if (name === "credit_card") {
-      // Special handling: validate with Luhn before redacting
+    if (validate) {
       scrubbed = scrubbed.replace(pattern, (match) => {
-        const digitsOnly = match.replace(/\D/g, "");
-        if (digitsOnly.length >= 13 && digitsOnly.length <= 19 && passesLuhn(digitsOnly)) {
-          categoriesFound.add(name);
-          return replacement;
+        if (!validate(match)) {
+          return match;
         }
-        return match;
+        categoriesFound.add(name);
+        return replacement;
       });
     } else {
       const before = scrubbed;

@@ -104,7 +104,7 @@ describe("matchesTheme", () => {
     expect(matchesTheme("the planner is broken", ["plan"])).toBe(false);
   });
 
-  it("does not pluralise multi-word keywords, which match as substrings", () => {
+  it("matches multi-word keywords and their plural", () => {
     expect(matchesTheme("i need a time slot", ["time slot"])).toBe(true);
     expect(matchesTheme("i need time slots", ["time slot"])).toBe(true);
   });
@@ -226,6 +226,38 @@ describe("analyzeFeedback", () => {
     const futBilling = fut.themes.find((t) => t.theme_id === "billing")!;
     const nowBilling = current.themes.find((t) => t.theme_id === "billing")!;
     expect(futBilling.severity_score).toBeLessThanOrEqual(nowBilling.severity_score + 0.01);
+  });
+});
+
+// ── Scoring fixes ──
+
+describe("severity scoring", () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const billingSeverity = (c: FormattedConversation) =>
+    analyzeFeedback([c], [], config).themes.find((t) => t.theme_id === "billing")!.severity_score;
+
+  it("halves the recency boost after 7 days, as documented", () => {
+    const weekOld = new Date(Date.now() - 7 * DAY_MS).toISOString();
+    // thread term 10 + recency 30 * 0.5
+    expect(billingSeverity(conv(1, "billing", { createdAt: weekOld }))).toBeCloseTo(25, 1);
+  });
+
+  it("applies the highest matching tag boost regardless of tag order", () => {
+    const a = billingSeverity(conv(1, "billing", { tags: ["bug", "escalation"] }));
+    const b = billingSeverity(conv(1, "billing", { tags: ["escalation", "bug"] }));
+    expect(a).toBe(b);
+  });
+});
+
+describe("multi-word keyword matching", () => {
+  it("does not match a phrase that starts or ends inside another word", () => {
+    expect(matchesTheme("overtime slot usage", ["time slot"])).toBe(false);
+    expect(matchesTheme("error 1500 error", ["500 error"])).toBe(false);
+  });
+
+  it("still matches the phrase and its plural", () => {
+    expect(matchesTheme("pick a time slot", ["time slot"])).toBe(true);
+    expect(matchesTheme("no time slots left", ["time slot"])).toBe(true);
   });
 });
 

@@ -17,6 +17,10 @@ const REQUEST_TIMEOUT_MS = 30_000;
 // PAGE_SIZE is far beyond any real 90-day window.
 const MAX_PAGES = 200;
 const MAX_RETRIES = 3;
+// Chatbase's rate window is 10 seconds; a longer ask fails fast rather than
+// hanging the tool call.
+const MAX_RETRY_WAIT_MS = 30_000;
+const DAY_MS = 86_400_000;
 
 const API_BASE = "https://www.chatbase.co/api/v1";
 
@@ -160,6 +164,11 @@ export class ChatbaseClient {
         const waitMs = Number.isFinite(header) && header > 0
           ? header * 1000
           : 1000 * 2 ** attempt;
+        if (waitMs > MAX_RETRY_WAIT_MS) {
+          throw new Error(
+            `Chatbase rate limit for agent "${this.agent.name}": asked to wait ${Math.round(waitMs / 1000)}s`
+          );
+        }
         await new Promise((r) => setTimeout(r, waitMs));
         continue;
       }
@@ -180,8 +189,10 @@ export class ChatbaseClient {
   }
 
   /**
-   * Fetch conversations in the timeframe. Dates are filtered server-side, so
-   * unlike the ProductLift client this does no client-side date trimming.
+   * Fetch conversations in the timeframe. The API filters by whole UTC days,
+   * so the request asks for a day either side and results are trimmed here
+   * to the exact window the other sources use. Undated conversations are
+   * kept — the server already placed them in range.
    * `filteredSources` is a comma-separated list of source types (see
    * CHATBASE_CONVERSATION_SOURCES), also applied server-side.
    */
@@ -189,8 +200,10 @@ export class ChatbaseClient {
     timeframeDays: number,
     filteredSources?: string
   ): Promise<ChatbaseConversation[]> {
-    const end = new Date();
-    const start = new Date(end.getTime() - timeframeDays * 86_400_000);
+    const now = Date.now();
+    const start = new Date(now - timeframeDays * DAY_MS);
+    // endDate may be exclusive; tomorrow's date keeps today's chats either way.
+    const end = new Date(now + DAY_MS);
 
     const all: ChatbaseConversation[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
@@ -211,7 +224,10 @@ export class ChatbaseClient {
       if (batch.length < PAGE_SIZE) break;
     }
 
-    return all;
+    return all.filter((c) => {
+      const createdMs = new Date(c.created_at).getTime();
+      return !Number.isFinite(createdMs) || createdMs >= start.getTime();
+    });
   }
 }
 
@@ -228,13 +244,16 @@ export function parseAgentConfigs(): AgentConfig[] {
       .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
-      .map((entry) => {
+      .map((entry, index) => {
         const parts = entry.split("|");
         const name = parts[0]?.trim();
         const agentId = parts[1]?.trim();
         if (!name || !agentId) {
+          // Don't echo the entry: a mis-pasted API key would land in tool
+          // descriptions and list_sources.
           throw new Error(
-            `Invalid CHATBASE_AGENTS format. Expected "name|agentId" per entry, got: ${entry}`
+            `Invalid CHATBASE_AGENTS format in entry ${index + 1}. ` +
+              'Expected "name|agentId" per entry.'
           );
         }
         return { name, agentId };

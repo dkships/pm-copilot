@@ -154,6 +154,39 @@ describe("formatFeatureRequest", () => {
     const sink = new Set<string>();
     expect(formatFeatureRequest(featureRequest({ portal: "beta" }), sink).portal).toBe("beta");
   });
+
+  it("scrubs PII out of the title-derived URL slug", () => {
+    const sink = new Set<string>();
+    const formatted = formatFeatureRequest(
+      featureRequest({ url: "https://roadmap.example.com/p/call-me-555-123-4567" }),
+      sink
+    );
+    expect(formatted.url).toBe("https://roadmap.example.com/p/call-me-[PHONE REDACTED]");
+    expect(sink.has("phone")).toBe(true);
+  });
+
+  it("tolerates null description, comment text and comment author", () => {
+    const sink = new Set<string>();
+    const raw = featureRequest({
+      description: null as unknown as string,
+      comments: [
+        {
+          id: 1,
+          comment: null as unknown as string,
+          author: null as unknown as FeatureRequest["comments"][number]["author"],
+          pinned_to_top: false,
+          tagged_for_changelog: false,
+          parent_id: null,
+          created_at: null,
+          updated_at: null,
+          url: "",
+        },
+      ],
+    });
+    const formatted = formatFeatureRequest(raw, sink);
+    expect(formatted.description).toBe("");
+    expect(formatted.comments[0]).toEqual({ role: "unknown", comment: "", created_at: null });
+  });
 });
 
 // ── trimAnalysisForDetail ──
@@ -244,6 +277,13 @@ describe("signalTypeOf", () => {
     expect(signalTypeOf(theme({ convergent: true }))).toBe("convergent");
     expect(signalTypeOf(theme({ convergent: false, reactive_count: 2, proactive_count: 0 }))).toBe("reactive");
     expect(signalTypeOf(theme({ convergent: false, reactive_count: 0, proactive_count: 2 }))).toBe("proactive");
+  });
+});
+
+describe("toErrorResult scrubbing", () => {
+  it("scrubs PII out of an error message before it reaches the client", () => {
+    const result = toErrorResult(new Error("API said: contact jane@example.com"));
+    expect(result.content[0]?.text).toBe("Error: API said: contact [EMAIL REDACTED]");
   });
 });
 

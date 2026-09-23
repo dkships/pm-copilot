@@ -1,5 +1,17 @@
 const PAGE_DELAY_MS = 250;
 const REQUEST_TIMEOUT_MS = 30_000;
+const PAGE_SIZE = 10; // API max per request
+// Backstop against an endpoint that keeps reporting hasMore: 500 pages is
+// 5,000 posts, far beyond any real portal.
+const MAX_PAGES = 500;
+const MAX_429_RETRIES = 3;
+const RETRY_BACKOFF_MS = 2_000;
+// A Retry-After beyond this fails fast rather than hanging the tool call.
+const MAX_RETRY_WAIT_MS = 30_000;
+// The raw post list doesn't depend on any tool parameter (date and vote
+// filtering run client-side), so one download serves every call for a while.
+const POSTS_CACHE_TTL_MS = 5 * 60 * 1000;
+const HTTP_TOO_MANY_REQUESTS = 429;
 
 export interface PortalConfig {
   name: string;
@@ -55,8 +67,22 @@ export interface FeatureRequest extends PostSummary {
   portal: string;
 }
 
+export interface FeatureRequestsResult {
+  requests: FeatureRequest[];
+  // Posts whose comments could not be fetched; they are returned with none.
+  commentFailures: number;
+}
+
+export interface FetchPostsOptions {
+  maxPages?: number;
+  pageDelayMs?: number;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export class ProductLiftClient {
   private portal: PortalConfig;
+  private postsCache: { posts: PostSummary[]; fetchedAt: number } | null = null;
 
   constructor(portal: PortalConfig) {
     this.portal = portal;
@@ -79,7 +105,11 @@ export class ProductLiftClient {
       .slice(0, limit);
   }
 
-  private async apiGet<T>(path: string, params?: Record<string, string>): Promise<T> {
+  private async apiGet<T>(
+    path: string,
+    params?: Record<string, string>,
+    retryCount = 0
+  ): Promise<T> {
     const url = new URL(`${this.portal.baseUrl}${path}`);
     if (params) {
       for (const [k, v] of Object.entries(params)) {
@@ -94,6 +124,22 @@ export class ProductLiftClient {
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+
+    // Honour Retry-After when present, otherwise back off exponentially.
+    if (res.status === HTTP_TOO_MANY_REQUESTS && retryCount < MAX_429_RETRIES) {
+      const retryAfterSecs = Number(res.headers.get("retry-after"));
+      const waitMs =
+        Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
+          ? retryAfterSecs * 1000
+          : RETRY_BACKOFF_MS * 2 ** retryCount;
+      if (waitMs > MAX_RETRY_WAIT_MS) {
+        throw new Error(
+          `ProductLift rate limit for ${this.portal.name}: asked to wait ${Math.round(waitMs / 1000)}s`
+        );
+      }
+      await sleep(waitMs);
+      return this.apiGet(path, params, retryCount + 1);
+    }
 
     if (res.status === 401 || res.status === 403) {
       const text = await res.text();
@@ -113,26 +159,47 @@ export class ProductLiftClient {
     return (await res.json()) as T;
   }
 
-  async fetchPosts(): Promise<PostSummary[]> {
-    const allPosts: PostSummary[] = [];
-    let skip = 0;
-    const limit = 10; // API max per request
-
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const page = await this.apiGet<PaginatedResponse<PostSummary>>(
-        "/api/v1/posts",
-        { skip: String(skip), limit: String(limit) }
-      );
-
-      allPosts.push(...page.data);
-
-      if (!page.hasMore || page.data.length === 0) break;
-
-      skip += page.data.length;
-      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+  async fetchPosts(options: FetchPostsOptions = {}): Promise<PostSummary[]> {
+    if (this.postsCache && Date.now() - this.postsCache.fetchedAt < POSTS_CACHE_TTL_MS) {
+      return this.postsCache.posts;
     }
 
+    const maxPages = options.maxPages ?? MAX_PAGES;
+    const pageDelayMs = options.pageDelayMs ?? PAGE_DELAY_MS;
+    const allPosts: PostSummary[] = [];
+    let skip = 0;
+
+    for (let pageNum = 1; ; pageNum++) {
+      if (pageNum > maxPages) {
+        throw new Error(
+          `ProductLift portal "${this.portal.name}" returned more than ${maxPages} pages; stopped paging`
+        );
+      }
+
+      const page = await this.apiGet<PaginatedResponse<PostSummary>>(
+        "/api/v1/posts",
+        { skip: String(skip), limit: String(PAGE_SIZE) }
+      );
+
+      // A 200 with no data array (an error body) must fail the portal, not
+      // end paging early and get cached as the full list.
+      if (!Array.isArray(page.data)) {
+        throw new Error(
+          `ProductLift portal "${this.portal.name}" returned a malformed page at skip=${skip}`
+        );
+      }
+      const data = page.data;
+      allPosts.push(...data);
+
+      if (!page.hasMore || data.length === 0) {
+        break;
+      }
+
+      skip += data.length;
+      await sleep(pageDelayMs);
+    }
+
+    this.postsCache = { posts: allPosts, fetchedAt: Date.now() };
     return allPosts;
   }
 
@@ -140,13 +207,16 @@ export class ProductLiftClient {
     const res = await this.apiGet<DataResponse<Comment[]> | PaginatedResponse<Comment>>(
       `/api/v1/posts/${postId}/comments`
     );
-    return Array.isArray(res.data) ? res.data : [res.data];
+    if (Array.isArray(res.data)) {
+      return res.data;
+    }
+    return res.data ? [res.data] : [];
   }
 
   async fetchFeatureRequests(
     includeComments: boolean,
     statusFilter?: string
-  ): Promise<FeatureRequest[]> {
+  ): Promise<FeatureRequestsResult> {
     let posts = await this.fetchPosts();
 
     // Filter by status BEFORE the comment-fetch loop so filtered-out posts
@@ -159,16 +229,20 @@ export class ProductLiftClient {
     }
 
     const requests: FeatureRequest[] = [];
+    let commentFailures = 0;
 
     for (const post of posts) {
       let comments: Comment[] = [];
-      if (includeComments) {
-        await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+      // A post that reports zero comments costs no call; a missing count
+      // still fetches.
+      const mayHaveComments = (post.comments_count ?? 1) > 0;
+      if (includeComments && mayHaveComments) {
+        await sleep(PAGE_DELAY_MS);
         try {
           comments = await this.fetchComments(post.id);
         } catch {
-          // Some posts may not have comments accessible
-          comments = [];
+          // Returned without comments, and counted so the caller can warn.
+          commentFailures++;
         }
       }
 
@@ -179,7 +253,7 @@ export class ProductLiftClient {
       });
     }
 
-    return requests;
+    return { requests, commentFailures };
   }
 }
 
@@ -191,14 +265,18 @@ export class ProductLiftClient {
 export function parsePortalConfigs(): PortalConfig[] {
   const portals = process.env.PRODUCTLIFT_PORTALS;
   if (portals) {
-    return portals.split(",").map((entry) => {
+    return portals.split(",").map((entry, index) => {
       const parts = entry.trim().split("|");
       const name = parts[0]?.trim();
       const baseUrl = parts[1]?.trim();
       const apiKey = parts.slice(2).join("|").trim(); // rejoin — tokens may contain |
       if (!name || !baseUrl || !apiKey) {
+        // Never echo any part of the entry: it holds the API key (a key-only
+        // entry would even parse as the name), and this message is surfaced
+        // in tool descriptions and list_sources.
         throw new Error(
-          `Invalid PRODUCTLIFT_PORTALS format. Expected "name|url|key" per entry, got: ${entry}`
+          `Invalid PRODUCTLIFT_PORTALS format in entry ${index + 1}. ` +
+            'Expected "name|url|key" per entry.'
         );
       }
       return { name, baseUrl: baseUrl.replace(/\/$/, ""), apiKey };
