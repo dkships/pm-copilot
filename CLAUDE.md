@@ -8,6 +8,7 @@ MCP server connecting an LLM to customer signal data (HelpScout support tickets 
 npm run build       # Compile TypeScript (also chmods dist/index.js)
 npm run dev         # Watch mode
 npm test            # Vitest unit tests
+npm run typecheck   # Type-check src and tests (CI runs it)
 npm start           # Run the server
 npm run tool -- <tool_name> '<json-params>'  # Call one tool directly, no MCP client (use --list to enumerate)
 npm run eval        # Theme-matching precision/recall (--failures, --json, --fixture, --min-f1)
