@@ -35,7 +35,7 @@ MCP server connecting an LLM to customer signal data (HelpScout support tickets,
 
 - Tool responses include `pii_scrubbing_applied: true` and `pii_categories_redacted`
 - Partial failures return a `warnings` array identifying which source failed
-- `npm run build`, `npm test`, and `npm run audit:ci` all pass
+- `npm run build`, `npm run typecheck`, `npm test`, `npm run eval -- --min-f1 0.90`, and `npm run audit:ci` all pass
 - New customer data sources route through `src/pii-scrubber.ts`
 
 ## Code style

@@ -30,11 +30,12 @@ Expected response: acknowledgement within 5 business days. If the report is vali
 
 ## PII handling
 
-The server scrubs PII at the format layer before any customer text leaves the process. Categories scrubbed: SSN (US format), credit cards (Luhn-validated), email addresses, phone numbers (US format). Customer email fields are always replaced with `[REDACTED]` regardless of pattern match.
+The server scrubs PII at the format layer before any customer text leaves the process. Categories scrubbed: SSN (US format), credit cards (Luhn-validated), email addresses, phone numbers (US formats, plus `+`-prefixed international numbers). Customer email fields are always replaced with `[REDACTED]` regardless of pattern match.
 
 Known limitations of the current scrubber:
 
-- Regexes are US-centric. International phone numbers and non-US national ID formats are not redacted.
+- Regexes are US-centric. International numbers without a `+` prefix (e.g. a UK `07700 900123`) and non-US national ID formats are not redacted.
+- Feature-request URLs are scrubbed, but slugs usually strip `@` and `.`, so an email in a title can survive in the URL in a mangled form (`johngmailcom`). Digits survive slugification and are caught.
 - Names and street addresses in message text are not redacted (high false-positive rate). ProductLift commenter names are dropped at the format layer instead.
 - Patterns are deliberately greedy: long digit runs such as order numbers, tracking IDs, and timestamps can be redacted as phone/SSN false positives. Over-redaction is preferred to leakage, so expect some non-PII numbers to be masked in analysis text.
 - The `kpi_context` tool parameter is passed verbatim. Callers are responsible for not pasting raw PII into that field.

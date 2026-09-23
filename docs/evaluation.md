@@ -27,7 +27,7 @@ Matching is multi-label (one signal can belong to several themes), so the report
 
 The eval's first job was auditing the v2 config. It found five real defects:
 
-- Plural coverage was inconsistent. `tier` was listed without `tiers`, and single-word keywords matched on a bare word boundary, so "the tiers" matched nothing. On live chat data this was the expensive one: a recurring widget prompt, "what are your plans and prices?", matched no theme at all, because `plan` missed "plans" and `pricing` missed "prices".
+- Plural coverage was inconsistent. `tier` was listed without `tiers`, and single-word keywords matched on a bare word boundary, so "the tiers" matched nothing. On live chat data this was the expensive one: a recurring preset question about plans and prices matched no theme at all, because `plan` missed "plans" and `pricing` missed "prices".
 - `team` fired on "founding team" and "IT team", half the false positives in the fixture.
 - `plan` tagged "i plan to launch next week" as Account & Licensing.
 - `upgrade` sat in both Billing & Payment and Account & Licensing, so an API ticket mentioning an upgrade landed in both.
@@ -39,32 +39,24 @@ All five are fixed in v3. Single-word keywords match an optional regular plural 
 
 Two numbers, because they measure different things.
 
-Against the committed fixture (82 hand-labelled examples), micro-averaged:
+Against the committed fixture (86 hand-labelled examples as of 1.5.0; the v2 row was measured on the original 82), micro-averaged:
 
 | config | precision | recall | F1 | miss rate |
 |---|---:|---:|---:|---:|
 | v2 | 88.7% | 68.8% | 77.5% | 25.0% |
-| v3 | 95.9% | 98.9% | 97.4% | 1.3% |
+| v3 | 96.1% | 99.0% | 97.5% | 1.3% |
 
 Treat that with suspicion. The config was iterated against this fixture, so the v3 figure is in-sample and flatters itself. It's a regression gate: it tells you a change broke something, not how well matching works.
 
 The number that means something is held-out real data: 1,100 chat conversations across four products, from a 30-day window *before* the one the new themes were derived from.
 
-| product | conversations | v2 unmatched | v3 unmatched | change |
-|---------|--------------:|-------------:|-------------:|-------:|
-| Product A | 435 | 20.5% | 19.3% | −1.1pp |
-| Product B | 464 | 58.4% | 48.5% | −9.9pp |
-| Product C | 135 | 25.9% | 23.7% | −2.2pp |
-| Product D | 66 | 66.7% | 34.8% | −31.8pp |
-| **all** | **1,100** | **39.9%** | **33.1%** | **−6.8pp** |
+Unmatched conversations fell from 39.9% (v2) to 33.1% (v3). The biggest gains came from the products whose vocabulary the config never covered, and a third of conversations still match nothing, so there's plenty left.
 
-The gains land where expected: the products whose vocabulary the config never covered. A third of conversations still match nothing, so there's plenty left.
-
-Register mattered less than product coverage. Product A chat is *better* matched than its tickets, so chat phrasing isn't the problem on its own. Missing product vocabulary is, and per-product chat agents expose that where a shared support mailbox averages it away.
+Register mattered less than product coverage. For one product, chat was *better* matched than its tickets, so chat phrasing isn't the problem on its own. Missing product vocabulary is, and per-product chat agents expose that where a shared support mailbox averages it away.
 
 ## Known limits
 
-- **Canned widget prompts inflate counts.** Preset buttons like "I entered a giveaway, how do I know if I won?" recur verbatim dozens of times. They aren't deduplicated, on purpose: twenty people clicking a preset is twenty people with that question. It does mean volume for a theme with a popular preset isn't comparable to volume for one without.
+- **Canned widget prompts inflate counts.** Preset question buttons in a chat widget recur verbatim dozens of times. They aren't deduplicated, on purpose: twenty people clicking a preset is twenty people with that question. It does mean volume for a theme with a popular preset isn't comparable to volume for one without.
 - **Matching is English-only.** Live data includes German, Spanish and Italian conversations, and all of them land in `unmatched`.
 - **Irregular plurals still need listing.** The suffix rule covers `plan`/`plans`, not `entry`/`entries`.
 

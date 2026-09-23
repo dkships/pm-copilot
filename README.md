@@ -181,7 +181,7 @@ A trimmed `synthesize_feedback` response at `summary` detail. Values are illustr
       {
         "theme_id": "booking-scheduling",
         "label": "Booking & Scheduling",
-        "priority_score": 87.1,
+        "priority_score": 78.4,
         "convergent": true,
         "reactive_count": 211,
         "proactive_count": 19,
@@ -228,7 +228,7 @@ It's versioned (v2.2). Every `generate_product_plan` response links to it, and t
 
 Themes are matched with keyword lists, not embeddings or an LLM classifier. Customer text never leaves the server, and the same input always produces the same themes, so a ranking can be audited. The cost is recall.
 
-`npm run eval` measures it. On the committed 82-example fixture, config v3 scores micro precision 95.9%, recall 98.9%, F1 97.4%, with a 1.3% miss rate. That number is in-sample (the config was tuned against it), so it's a regression gate. On held-out real chat data, a third of conversations still match no theme.
+`npm run eval` measures it. On the committed 86-example fixture, config v3 scores micro precision 96.1%, recall 99.0%, F1 97.5%, with a 1.3% miss rate. That number is in-sample (the config was tuned against it), so it's a regression gate. On held-out real chat data, a third of conversations still match no theme.
 
 Full results, what the first run found, and known limits: [docs/evaluation.md](docs/evaluation.md).
 
@@ -236,7 +236,7 @@ Full results, what the first run found, and known limits: [docs/evaluation.md](d
 
 All customer text is scrubbed before it enters the analysis or leaves the server:
 
-- SSNs, credit cards (Luhn-validated), email addresses, and phone numbers (US formats and `+`-prefixed international) are redacted, including in feature-request URLs. The customer email field is always `[REDACTED]`.
+- SSNs, credit cards (Luhn-validated), email addresses, and phone numbers (US formats and `+`-prefixed international) are redacted, and scrubbed from feature-request URLs as well. The customer email field is always `[REDACTED]`.
 - Agent/admin replies, internal notes, attachments, voter identities, commenter names, and Chatbase assistant turns, lead forms, user IDs and country are excluded entirely.
 - `preview_only: true` on `generate_product_plan` shows what would be sent without fetching data.
 - Every response includes `pii_scrubbing_applied` and `pii_categories_redacted`.

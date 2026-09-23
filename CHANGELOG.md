@@ -19,30 +19,35 @@ A reliability, privacy and docs pass. Scores shift slightly, so the methodology 
 
 - **PII:** the email pattern ran in quadratic time on long dotted or dashed runs (20k characters
   took ~2.5s), and chat text is unbounded. Its quantifiers are now bounded. The scrubber also
-  catches cards written with dots, underscores or padded separators, dot-separated SSNs, and
-  `+`-prefixed international phone numbers. Feature-request URLs are scrubbed too, since
-  ProductLift builds the slug from the title.
-- A malformed `PRODUCTLIFT_PORTALS` entry echoed the entry, API key included, into tool
-  descriptions and `list_sources`.
+  catches `+`-prefixed international phone numbers (not after `GMT`/`UTC`, not before a year).
+  Feature-request URLs are scrubbed too, since ProductLift builds the slug from the title. Error
+  messages returned to the client are scrubbed on every path.
+- A malformed `PRODUCTLIFT_PORTALS` or `CHATBASE_AGENTS` entry was echoed, a pasted API key
+  included, into tool descriptions and `list_sources`. Errors now name the entry number only.
+- dotenv 17 printed a banner to stdout, which is the MCP protocol channel.
 - A null description, comment body or comment author from ProductLift crashed the formatter and
   dropped the whole portal.
-- A result where any source failed was cached for 5 minutes. Only fully successful fetches are
-  cached now, and `fetched_at` reports when the data was actually fetched.
-- ProductLift: 429s are retried instead of failing the portal, paging stops at 500 pages, and
-  failed comment fetches produce a warning instead of an empty list.
+- A result where any source failed was cached for 5 minutes. It's now cached for 30 seconds, and
+  `fetched_at` reports when the data was actually fetched.
+- ProductLift: 429s are retried instead of failing the portal, paging stops at 500 pages, a
+  malformed page fails the portal instead of truncating the list, and failed comment fetches
+  produce a warning instead of an empty list.
 - HelpScout re-authenticates once on a 401 and retries a 5xx, instead of discarding every page
-  already fetched. Retry-After values past one rate window fail fast in HelpScout, ProductLift and
-  Chatbase instead of sleeping inside a tool call.
+  already fetched. Retry-After values over 60s (HelpScout) or 30s (ProductLift, Chatbase) fail fast
+  instead of sleeping inside a tool call.
 - Chatbase filters by whole UTC days, which let in up to a day of extra chats (a 1-day window
   could return nearly two). Results are trimmed to the exact window.
 - An unknown `portal_name` on the analysis tools now warns, as `agent_name` already did.
 - An informational warning (unknown `source_filter`) no longer counts as a Chatbase failure.
 - `.env` is loaded from the repo root, not the working directory. Claude Desktop launches the
-  server elsewhere, so it exited with "Missing HELPSCOUT_APP_ID".
+  server elsewhere, so it exited with "Missing HELPSCOUT_APP_ID". A `.env` in the working
+  directory is no longer read.
 - **Scoring (methodology v2.2):** recency used `exp(-age/7)`, a 4.85-day half-life, against the
   documented 7 days. The tag boost took the first matching tag, so HelpScout's tag order changed
   the score; it now takes the highest. Multi-word keywords matched as raw substrings ("sign in"
-  fired on "design in"); they now match on word boundaries. Theme eval unchanged at micro F1 0.974.
+  fired on "design in"); they now match on word boundaries. Keywords that only worked as stems
+  (`calendar connect`, `form submit`) gained explicit variants, with fixture rows covering them.
+  Theme eval: micro F1 0.975 on 86 examples.
 
 ### Changed
 
@@ -56,18 +61,13 @@ A reliability, privacy and docs pass. Scores shift slightly, so the methodology 
   `AGENTS.md`, `SECURITY.md`, `CONTRIBUTING.md` and the issue template.
 - Transitive `fast-uri`, `hono` and `qs` updated; `npm audit` had been failing CI on a high
   `fast-uri` advisory.
-
 - **TypeScript 6.0.3 → 7.0.2** (#28), **`@types/node` 25.9.1 → 26.2.0** (#32), and
   **`actions/setup-node` 6 → 7** (#30). Three major bumps, no source changes needed for any of
   them. Verified together before merging, not just individually: `tsc --noEmit` clean, build
   clean, 124 tests, theme-matching eval at micro F1 0.974, `npm audit` clean, and a live
   `list_sources` call returning the expected sources. Emitted `dist/index.js` is byte-comparable.
-- Two caveats on what that green covers, both pre-existing rather than introduced here.
-  `skipLibCheck: true` means type problems inside `node_modules` are suppressed, so the clean
-  typecheck speaks for this repo's code and not for its dependencies' type definitions. And
-  `tsconfig.json` excludes `src/**/*.test.ts` while vitest strips types without checking them, so
-  the test files are never typechecked at all — the passing suite proves runtime behaviour under
-  TypeScript 7, not type correctness of the tests.
+- `skipLibCheck: true` still suppresses type problems inside `node_modules`, so a clean
+  typecheck speaks for this repo's code, not its dependencies' type definitions.
 
 ## [1.4.1] — 2026-08-10
 

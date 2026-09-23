@@ -27,6 +27,7 @@ Node 20 or higher is required.
 3. Run the full check locally:
    ```bash
    npm run build
+   npm run typecheck
    npm test
    npm run eval -- --min-f1 0.90
    npm run audit:ci
@@ -42,6 +43,7 @@ npm run build        # Compile TypeScript
 npm run dev          # Watch mode
 npm start            # Run the server
 npm test             # Vitest unit tests
+npm run typecheck    # Type-check src and tests
 npm run eval         # Theme-matching eval (see docs/evaluation.md)
 npm run audit:ci     # Dependency audit gate
 ```
