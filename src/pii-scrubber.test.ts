@@ -155,3 +155,40 @@ describe("scrubPiiArray", () => {
     expect(r.piiCategoriesFound).toEqual([]);
   });
 });
+
+describe("scrubPii hardening", () => {
+  it("redacts cards written with dots, underscores or padded separators", () => {
+    for (const card of [
+      "4111.1111.1111.1111",
+      "4111_1111_1111_1111",
+      "4111  1111  1111  1111",
+      "4111 - 1111 - 1111 - 1111",
+    ]) {
+      const r = scrubPii(`card ${card} declined`);
+      expect(r.text).toBe("card [CC REDACTED] declined");
+    }
+  });
+
+  it("redacts a dot-separated SSN", () => {
+    expect(scrubPii("ssn 123.45.6789").text).toBe("ssn [SSN REDACTED]");
+  });
+
+  it("redacts international numbers written with a + prefix", () => {
+    for (const phone of ["+44 20 7946 0958", "+61 2 9374 4000", "+33 1 42 68 53 00", "+49 30 901820"]) {
+      const r = scrubPii(`whatsapp me on ${phone} today`);
+      expect(r.text).toBe("whatsapp me on [PHONE REDACTED] today");
+      expect(r.piiCategoriesFound).toContain("phone");
+    }
+  });
+
+  it("does not treat a short +N expression as a phone number", () => {
+    expect(scrubPii("rated +1 2 out of 5").text).toBe("rated +1 2 out of 5");
+  });
+
+  it("scrubs long dotted runs in linear time (no ReDoS on the email pattern)", () => {
+    const hostile = "a.".repeat(20_000);
+    const start = performance.now();
+    scrubPii(hostile);
+    expect(performance.now() - start).toBeLessThan(250);
+  });
+});
