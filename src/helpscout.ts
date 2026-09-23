@@ -319,3 +319,30 @@ export class HelpScoutClient {
     return allConversations;
   }
 }
+
+export interface HelpScoutConfig {
+  appId: string;
+  appSecret: string;
+}
+
+/**
+ * HelpScout is optional. Both variables set configures it; neither set leaves
+ * it off. One without the other is a mistake worth reporting, and the error
+ * names the missing variable without echoing the one that is present.
+ */
+export function parseHelpScoutConfig(): HelpScoutConfig | null {
+  const appId = process.env.HELPSCOUT_APP_ID?.trim();
+  const appSecret = process.env.HELPSCOUT_APP_SECRET?.trim();
+
+  if (appId && appSecret) {
+    return { appId, appSecret };
+  }
+  if (!appId && !appSecret) {
+    return null;
+  }
+
+  const missing = appId ? "HELPSCOUT_APP_SECRET" : "HELPSCOUT_APP_ID";
+  throw new Error(
+    `${missing} is missing; set both HELPSCOUT_APP_ID and HELPSCOUT_APP_SECRET, or neither.`
+  );
+}

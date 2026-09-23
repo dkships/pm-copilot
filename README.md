@@ -54,12 +54,12 @@ npm run build
 
 ### Credentials
 
-HelpScout is required. ProductLift and Chatbase are optional, and the analysis adapts to whichever you configure.
+Configure at least one source; the analysis adapts to whichever you set up. Without HelpScout there are no support tickets, so themes get no severity score and no convergence boost; ProductLift and Chatbase still rank themes by frequency and votes.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `HELPSCOUT_APP_ID` | Yes | OAuth app ID from https://secure.helpscout.net/apps/custom/ |
-| `HELPSCOUT_APP_SECRET` | Yes | OAuth app secret |
+| `HELPSCOUT_APP_ID` | No | OAuth app ID from https://secure.helpscout.net/apps/custom/ (set both or neither) |
+| `HELPSCOUT_APP_SECRET` | No | OAuth app secret |
 | `PRODUCTLIFT_PORTALS` | No | Multi-portal: `name\|url\|key,name2\|url2\|key2` |
 | `PRODUCTLIFT_PORTAL_URL` | No | Single portal URL |
 | `PRODUCTLIFT_API_KEY` | No | Single portal Bearer token |
@@ -96,7 +96,7 @@ Or open Claude Code in the repo: it prompts you to approve the project `.mcp.jso
 
 ### Verify
 
-Restart the client and ask it to run `list_sources`. It should list your HelpScout mailboxes and any portals or agents you configured.
+Restart the client and ask it to run `list_sources`. It should list the sources you configured: HelpScout mailboxes, ProductLift portals and Chatbase agents.
 
 ## Tools
 
@@ -279,7 +279,8 @@ Frequency and vote momentum are normalized against the top theme in the same cal
 
 ## Troubleshooting
 
-- **`Missing HELPSCOUT_APP_ID or HELPSCOUT_APP_SECRET`.** Check that `.env` exists in the repo root and has both values.
+- **`No data sources configured`.** Check that `.env` exists in the repo root and sets at least one source.
+- **`HELPSCOUT_APP_SECRET is missing` (or `_ID`).** Set both HelpScout values, or remove both to run without HelpScout.
 - **`HelpScout auth expired or invalid (403)` on every call.** If the token request succeeds but API calls get 403, the HelpScout user who owns the OAuth app was deactivated or lost access. Rotating the secret won't help; create a new app from an active user's profile and update both `HELPSCOUT_*` values.
 - **Changes aren't taking effect.** The client runs the compiled `dist/`. Run `npm run build` and restart the client.
 - **`No HelpScout mailbox named "…"`.** Run `list_sources` for exact names, or pass `mailbox_id`.

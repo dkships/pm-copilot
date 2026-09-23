@@ -31,8 +31,8 @@ Loaded from `.env` via dotenv with `override: true` — `.env` values win over a
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `HELPSCOUT_APP_ID` | Yes | OAuth app ID from https://secure.helpscout.net/apps/custom/ |
-| `HELPSCOUT_APP_SECRET` | Yes | OAuth app secret |
+| `HELPSCOUT_APP_ID` | No‡ | OAuth app ID from https://secure.helpscout.net/apps/custom/ |
+| `HELPSCOUT_APP_SECRET` | No‡ | OAuth app secret |
 | `PRODUCTLIFT_PORTALS` | No* | Multi-portal: `name\|url\|key,name2\|url2\|key2` |
 | `PRODUCTLIFT_PORTAL_URL` | No* | Single portal URL |
 | `PRODUCTLIFT_API_KEY` | No* | Single portal Bearer token |
@@ -41,6 +41,9 @@ Loaded from `.env` via dotenv with `override: true` — `.env` values win over a
 | `CHATBASE_AGENTS` | No† | Multi-agent: `name\|agentId,name2\|agentId2` |
 | `CHATBASE_AGENT_ID` | No† | Single agent id |
 | `CHATBASE_AGENT_NAME` | No† | Single agent display name (default: "default") |
+
+‡HelpScout is optional: set both or neither (one alone is a config error). At least one source must
+be configured or the server exits. Without HelpScout there's no severity or convergence signal.
 
 *At least one ProductLift config needed for `get_feature_requests` to work.
 
