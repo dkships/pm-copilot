@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { parsePortalConfigs, ProductLiftClient } from "./productlift.js";
 
 function stubNoPortalEnv() {
@@ -149,7 +149,7 @@ describe("fetchFeatureRequests status pre-filter", () => {
       apiKey: "secret",
     });
 
-    const { requests } = await client.fetchFeatureRequests(true, "planned");
+    const { requests } = await client.fetchFeatureRequests({ includeComments: true, status: "planned" });
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.id).toBe("1");
@@ -189,7 +189,7 @@ describe("fetchFeatureRequests status pre-filter", () => {
       apiKey: "secret",
     });
 
-    const { requests } = await client.fetchFeatureRequests(true);
+    const { requests } = await client.fetchFeatureRequests({ includeComments: true });
 
     expect(requests).toHaveLength(2);
     const commentUrls = fetchMock.mock.calls
@@ -288,7 +288,7 @@ describe("ProductLiftClient resilience", () => {
         : json(page([post("1", 0), post("2", 3), post("3")]))
     );
     vi.stubGlobal("fetch", fetchMock);
-    await client().fetchFeatureRequests(true);
+    await client().fetchFeatureRequests({ includeComments: true });
     const commentUrls = fetchMock.mock.calls
       .map((call) => String(call[0]))
       .filter((url) => url.includes("/comments"));
@@ -307,8 +307,164 @@ describe("ProductLiftClient resilience", () => {
           : json(page([post("1", 2)]))
       )
     );
-    const result = await client().fetchFeatureRequests(true);
+    const result = await client().fetchFeatureRequests({ includeComments: true });
     expect(result.requests).toHaveLength(1);
     expect(result.commentFailures).toBe(1);
+  });
+
+  it("attaches comments to a given subset of posts", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/comments")
+        ? json({ data: [{ id: 1, comment: "same here", author: { id: "u", name: "N", role: "user" } }] })
+        : json(page([]))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await client().withComments([post("7", 1), post("8", 0)]);
+    expect(result.requests.map((r) => [r.id, r.comments.length])).toEqual([
+      ["7", 1],
+      ["8", 0],
+    ]);
+    expect(result.requests[0]?.portal).toBe("acme");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("fetchPosts parallel paging", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const client = () =>
+    new ProductLiftClient({ name: "acme", baseUrl: "https://r.example.com", apiKey: "k" });
+
+  // Serves `total` posts in pages of 10, reporting `reportedTotal`.
+  function stubPortal(total: number, reportedTotal = total) {
+    let inFlight = 0;
+    const stats = { maxInFlight: 0, skips: [] as number[] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const skip = Number(new URL(String(input)).searchParams.get("skip"));
+        stats.skips.push(skip);
+        inFlight++;
+        stats.maxInFlight = Math.max(stats.maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 10));
+        inFlight--;
+        const data = Array.from({ length: Math.max(0, Math.min(10, total - skip)) }, (_, i) => ({
+          id: String(skip + i),
+          title: "",
+          description: "",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        }));
+        return new Response(
+          JSON.stringify({ data, hasMore: skip + data.length < total, total: reportedTotal, skip, limit: 10 }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      })
+    );
+    return stats;
+  }
+
+  it("fetches the remaining pages in parallel, in order", async () => {
+    const stats = stubPortal(35);
+    const posts = await client().fetchPosts({ pageDelayMs: 0 });
+    expect(posts.map((p) => p.id)).toEqual(Array.from({ length: 35 }, (_, i) => String(i)));
+    expect(stats.maxInFlight).toBeGreaterThan(1);
+  });
+
+  it("keeps paging sequentially when more posts exist than the first page reported", async () => {
+    stubPortal(25, 12);
+    const posts = await client().fetchPosts({ pageDelayMs: 0 });
+    expect(posts).toHaveLength(25);
+  });
+});
+
+describe("withComments concurrency", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches comments several at a time and keeps post order", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight--;
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+    );
+    const posts = Array.from({ length: 8 }, (_, i) => ({
+      id: String(i),
+      title: `p${i}`,
+      description: "",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      comments_count: 1,
+    }));
+    const client = new ProductLiftClient({ name: "acme", baseUrl: "https://r.example.com", apiKey: "k" });
+    const { requests } = await client.withComments(posts);
+    expect(requests.map((r) => r.id)).toEqual(["0", "1", "2", "3", "4", "5", "6", "7"]);
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeLessThanOrEqual(6);
+  });
+});
+
+describe("fetchFeatureRequests limit and sort", () => {
+  const json = (body: unknown) =>
+    new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const posts = [
+    { id: "old-popular", votes_count: 90, created_at: "2026-01-01T00:00:00Z" },
+    { id: "new-quiet", votes_count: 1, created_at: "2026-09-01T00:00:00Z" },
+    { id: "mid", votes_count: 40, created_at: "2026-05-01T00:00:00Z" },
+  ].map((p) => ({ ...p, title: p.id, description: "", status: null, updated_at: p.created_at, comments_count: 2 }));
+
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("/comments")
+        ? json({ data: [] })
+        : json({ data: posts, hasMore: false, total: posts.length, skip: 0, limit: 10 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const client = () =>
+    new ProductLiftClient({ name: "acme", baseUrl: "https://roadmap.acme.com", apiKey: "k" });
+
+  it("sorts by votes and keeps the top N", async () => {
+    const { requests } = await client().fetchFeatureRequests({ limit: 2, sort: "votes" });
+    expect(requests.map((r) => r.id)).toEqual(["old-popular", "mid"]);
+  });
+
+  it("sorts by recency and keeps the top N", async () => {
+    const { requests } = await client().fetchFeatureRequests({ limit: 1, sort: "recent" });
+    expect(requests.map((r) => r.id)).toEqual(["new-quiet"]);
+  });
+
+  it("fetches comments only for posts that survive the limit", async () => {
+    await client().fetchFeatureRequests({ includeComments: true, limit: 1, sort: "votes" });
+    const commentUrls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.includes("/comments"));
+    expect(commentUrls).toEqual(["https://roadmap.acme.com/api/v1/posts/old-popular/comments"]);
+  });
+
+  it("keeps API order when no sort is given", async () => {
+    const { requests } = await client().fetchFeatureRequests({});
+    expect(requests.map((r) => r.id)).toEqual(["old-popular", "new-quiet", "mid"]);
   });
 });

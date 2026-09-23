@@ -239,4 +239,22 @@ describe("ChatbaseClient.fetchConversations", () => {
     await expect(client.fetchConversations(30)).rejects.toThrow(/rate limit/i);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("backs off long enough to clear the 10s rate window when no Retry-After is sent", async () => {
+    vi.useFakeTimers();
+    fetchMock
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
+      .mockResolvedValueOnce(new Response("rate limited", { status: 429 }))
+      .mockResolvedValueOnce(jsonResponse({ data: [] }));
+    const client = new ChatbaseClient("k", AGENT);
+    const promise = client.fetchConversations(30);
+    // Three backoffs must add up to more than one 10s window.
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(promise).resolves.toEqual([]);
+    vi.useRealTimers();
+  });
 });
+

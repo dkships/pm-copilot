@@ -4,6 +4,25 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- `include_comments` on `synthesize_feedback` and `generate_product_plan` (default off). Comment
+  text is scrubbed, commenter names are dropped, and it feeds theme matching and quotes. On live
+  data it cut unmatched signals by about 40% (358 to 217). It costs one call per request with
+  comments against ProductLift's 120-a-minute limit, so a cold call on large portals can take up
+  to a minute. `preview_only` lists it when on.
+- `limit` and `sort` (`votes` / `recent`) on `get_feature_requests`, applied per portal before
+  comments are fetched.
+
+### Changed
+
+- ProductLift post pages and comment calls run 6 at a time. The first page reports the total, so
+  the rest are fetched in parallel. A 544-post portal went from ~50s to ~11s including comments.
+  ProductLift's Retry-After cap is now its 60s rate window.
+- Chatbase's fallback 429 backoff is 2s/4s/8s. The old 1s/2s/4s fit inside its 10s rate window,
+  so all three retries could fail.
+- The two analysis tools share one filter schema and fetch helper.
+
 ## [1.5.0] — 2026-09-22
 
 A reliability, privacy and docs pass. Scores shift slightly, so the methodology moves to v2.2.
