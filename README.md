@@ -96,7 +96,7 @@ Or open Claude Code in the repo: it prompts you to approve the project `.mcp.jso
 
 ### Verify
 
-Restart the client and ask it to run `list_sources`. It should list your HelpScout mailboxes and any portals or agents you configured.
+Restart the client and ask it to run `list_sources`. It should list the sources you configured: HelpScout mailboxes, ProductLift portals and Chatbase agents.
 
 ## Tools
 

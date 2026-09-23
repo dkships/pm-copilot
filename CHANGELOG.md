@@ -12,7 +12,9 @@ All notable changes to this project are documented here. Format follows [Keep a 
   a config error, reported without echoing the value. A mailbox filter given without HelpScout
   warns instead of being silently ignored. `list_sources` adds `helpscout_configured`. The
   `.env.example` HelpScout lines are now commented out, so copying it doesn't configure fake
-  credentials.
+  credentials. Without HelpScout, every analysis carries a note that ticket counts are absent,
+  not zero, so the methodology's "votes without tickets is a want" rule isn't misapplied.
+- The markdown product plan now shows warnings; it used to drop them.
 
 ### Fixed
 

@@ -88,8 +88,12 @@ try {
 }
 
 function describeHelpScout(): string {
-  if (helpscoutConfigError) return `none (config error: ${helpscoutConfigError})`;
-  if (!helpscout) return "none (set HELPSCOUT_APP_ID and HELPSCOUT_APP_SECRET in .env)";
+  if (helpscoutConfigError) {
+    return `none (config error: ${helpscoutConfigError})`;
+  }
+  if (!helpscout) {
+    return "none (set HELPSCOUT_APP_ID and HELPSCOUT_APP_SECRET in .env)";
+  }
   return "configured";
 }
 
@@ -140,9 +144,11 @@ function describeAgents(): string {
 
 // At least one source has to work, or every tool call would fail.
 if (!helpscout && productliftClients.length === 0 && chatbaseClients.length === 0) {
+  const hasConfigError = Boolean(helpscoutConfigError || portalConfigError || agentConfigError);
   console.error(
     "[pm-copilot] No data sources configured. Set HelpScout, ProductLift or Chatbase " +
-      "credentials in .env (see .env.example)."
+      "credentials in .env (see .env.example)." +
+      (hasConfigError ? " See the config errors above." : "")
   );
   process.exit(1);
 }
@@ -224,7 +230,9 @@ async function resolveMailboxId(
   if (mailboxId) return mailboxId;
   if (!mailboxName) return undefined;
   // Without HelpScout there is nothing to resolve against; fetchForTool warns.
-  if (!helpscout) return undefined;
+  if (!helpscout) {
+    return undefined;
+  }
 
   const mailboxes = await helpscout.fetchMailboxes();
   const match = mailboxes.find(
@@ -482,6 +490,14 @@ async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> 
 async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
   const piiCategories = new Set<string>();
   const warnings: string[] = [];
+  if (!helpscout) {
+    // The methodology reads "votes with zero tickets" as a want, not a need.
+    // Without a ticket source that zero means "not measured", so say so.
+    warnings.push(
+      "HelpScout is not configured: ticket counts are absent, not zero, so severity and " +
+        "convergence don't apply. Don't read zero tickets as low support demand."
+    );
+  }
 
   // Fetch every source independently — one failing doesn't block the others
   const [hsResult, plResult, cbResult] = await Promise.allSettled([
@@ -675,7 +691,8 @@ async function fetchForTool(
     timeframe_days: args.timeframe_days,
     top_voted_limit: args.top_voted_limit,
     include_comments: args.include_comments,
-    mailbox_id: resolvedMailboxId,
+    // An ignored mailbox filter must not fork the cache entry.
+    mailbox_id: helpscout ? resolvedMailboxId : undefined,
     portal_name: args.portal_name,
     agent_name: args.agent_name,
     source_filter: args.source_filter,
@@ -762,8 +779,9 @@ server.registerTool("synthesize_feedback", {
             {
               timeframe_days,
               detail_level,
-              mailbox_id: resolvedMailboxId ?? null,
-              mailbox_name: mailbox_name ?? null,
+              // Like source_filter below: only echo a filter that applied.
+              mailbox_id: helpscout ? (resolvedMailboxId ?? null) : null,
+              mailbox_name: helpscout ? (mailbox_name ?? null) : null,
               portal_name: portal_name ?? "all",
               agent_name: agent_name ?? (chatbaseClients.length > 0 ? "all" : null),
               // Only claim a filter when there is a Chatbase leg it applies to —
@@ -823,6 +841,7 @@ function renderPlanMarkdown(args: {
   priorities: PlanPriorityForRender[];
   emerging: Array<{ pattern: string; frequency: number }>;
   kpiContext?: string;
+  warnings: string[];
 }): string {
   const { summary } = args;
   const lines: string[] = [];
@@ -907,6 +926,15 @@ function renderPlanMarkdown(args: {
     lines.push("");
   }
 
+  if (args.warnings.length > 0) {
+    lines.push("## Warnings");
+    lines.push("");
+    for (const w of args.warnings) {
+      lines.push(`- ${w}`);
+    }
+    lines.push("");
+  }
+
   if (args.kpiContext) {
     lines.push("## Business context (KPI)");
     lines.push("");
@@ -974,7 +1002,9 @@ server.registerTool("generate_product_plan", {
     // Preview mode: show what would be sent without fetching
     if (preview_only) {
       const previewSources: string[] = [];
-      if (helpscout) previewSources.push("helpscout_tickets");
+      if (helpscout) {
+        previewSources.push("helpscout_tickets");
+      }
       if (portalConfigs.length > 0) previewSources.push("productlift_votes");
       if (chatbaseClients.length > 0) previewSources.push("chatbase_conversations");
 
@@ -1193,6 +1223,7 @@ server.registerTool("generate_product_plan", {
             priorities,
             emerging: emergingSummary,
             kpiContext: kpi_context,
+            warnings: data.warnings,
           })
         : JSON.stringify(plan);
 
