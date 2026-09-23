@@ -120,3 +120,52 @@ describe("HelpScoutClient 429 retry", () => {
     expect(apiCalls(fetchMock)).toBe(2);
   });
 });
+
+describe("HelpScoutClient recovery", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("re-authenticates once when a request gets a 401", async () => {
+    const fetchMock = stubFetchSequence([
+      new Response("expired", { status: 401 }),
+      mailboxesResponse(),
+    ]);
+    const client = new HelpScoutClient("id", "secret");
+    await expect(client.fetchMailboxes()).resolves.toEqual([{ id: 1, name: "Support" }]);
+    const tokenCalls = fetchMock.mock.calls.filter((c) => String(c[0]) === TOKEN_URL).length;
+    expect(tokenCalls).toBe(2);
+  });
+
+  it("still fails on a second consecutive 401", async () => {
+    stubFetchSequence([
+      new Response("expired", { status: 401 }),
+      new Response("expired", { status: 401 }),
+    ]);
+    const client = new HelpScoutClient("id", "secret");
+    await expect(client.fetchMailboxes()).rejects.toThrow(/401/);
+  });
+
+  it("retries a transient 5xx", async () => {
+    vi.useFakeTimers();
+    const fetchMock = stubFetchSequence([
+      new Response("bad gateway", { status: 502 }),
+      mailboxesResponse(),
+    ]);
+    const client = new HelpScoutClient("id", "secret");
+    const promise = client.fetchMailboxes();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(promise).resolves.toEqual([{ id: 1, name: "Support" }]);
+    expect(apiCalls(fetchMock)).toBe(2);
+  });
+
+  it("fails fast instead of sleeping through an absurd retry header", async () => {
+    const fetchMock = stubFetchSequence([
+      rateLimited({ "X-RateLimit-Retry-After": "3600" }),
+    ]);
+    const client = new HelpScoutClient("id", "secret");
+    await expect(client.fetchMailboxes()).rejects.toThrow(/rate limit/i);
+    expect(apiCalls(fetchMock)).toBe(1);
+  });
+});

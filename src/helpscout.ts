@@ -10,6 +10,25 @@ const PAGE_DELAY_MS = 250;
 const REQUEST_TIMEOUT_MS = 45_000;
 const MAX_429_RETRIES = 3;
 const RETRY_BACKOFF_MS = 15_000;
+// A retry wait beyond one rate-limit window means something is off; fail
+// fast rather than hang the tool call.
+const MAX_RETRY_WAIT_MS = RATE_LIMIT_WINDOW_MS;
+const MAX_SERVER_ERROR_RETRIES = 2;
+const SERVER_ERROR_BACKOFF_MS = 2_000;
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+const HTTP_TOO_MANY_REQUESTS = 429;
+const HTTP_SERVER_ERROR = 500;
+
+interface RetryState {
+  rateLimited: number;
+  serverErrors: number;
+  // One fresh token per request: a token can expire between the cache check
+  // and the call, but a second 401 means the credentials are bad.
+  reauthenticated: boolean;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface TokenState {
   accessToken: string;
@@ -123,7 +142,7 @@ export class HelpScoutClient {
   private async apiGet<T>(
     path: string,
     params?: Record<string, string>,
-    retryCount = 0
+    retry: RetryState = { rateLimited: 0, serverErrors: 0, reauthenticated: false }
   ): Promise<T> {
     await this.rateLimit();
     const token = await this.authenticate();
@@ -138,7 +157,8 @@ export class HelpScoutClient {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
-    if (res.status === 429) {
+    if (res.status === HTTP_TOO_MANY_REQUESTS) {
+      const retryCount = retry.rateLimited;
       if (retryCount >= MAX_429_RETRIES) {
         throw new Error(
           `HelpScout rate limit exceeded on ${path} after ${MAX_429_RETRIES} retries`
@@ -155,17 +175,32 @@ export class HelpScoutClient {
         retryAfterHeader && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
           ? retryAfterSecs * 1000
           : RETRY_BACKOFF_MS * Math.pow(2, retryCount);
-      await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
-      return this.apiGet(path, params, retryCount + 1);
+      if (retryAfterMs > MAX_RETRY_WAIT_MS) {
+        throw new Error(
+          `HelpScout rate limit on ${path}: asked to wait ${Math.round(retryAfterMs / 1000)}s`
+        );
+      }
+      await sleep(retryAfterMs);
+      return this.apiGet(path, params, { ...retry, rateLimited: retryCount + 1 });
     }
 
-    if (res.status === 401 || res.status === 403) {
-      // Token may have expired — clear cache and throw
+    if (res.status === HTTP_UNAUTHORIZED || res.status === HTTP_FORBIDDEN) {
+      // Token may have expired — clear the cache and retry once with a fresh one
       this.token = null;
+      if (res.status === HTTP_UNAUTHORIZED && !retry.reauthenticated) {
+        return this.apiGet(path, params, { ...retry, reauthenticated: true });
+      }
       const text = await res.text();
       throw new Error(
         `HelpScout auth expired or invalid (${res.status}): ${text}`
       );
+    }
+
+    // A transient 5xx mid-pagination would otherwise discard every page
+    // already fetched.
+    if (res.status >= HTTP_SERVER_ERROR && retry.serverErrors < MAX_SERVER_ERROR_RETRIES) {
+      await sleep(SERVER_ERROR_BACKOFF_MS * 2 ** retry.serverErrors);
+      return this.apiGet(path, params, { ...retry, serverErrors: retry.serverErrors + 1 });
     }
 
     if (!res.ok) {

@@ -134,7 +134,7 @@ describe("ChatbaseClient.fetchConversations", () => {
   it("stops paginating on a short page", async () => {
     const full = Array.from({ length: 50 }, (_, i) => ({
       id: `c${i}`,
-      created_at: "2026-08-01T00:00:00Z",
+      created_at: new Date().toISOString(),
       messages: [],
     }));
     fetchMock
@@ -150,7 +150,7 @@ describe("ChatbaseClient.fetchConversations", () => {
 
   it("accepts a bare array response as well as {data}", async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse([{ id: "c1", created_at: "2026-08-01T00:00:00Z", messages: [] }])
+      jsonResponse([{ id: "c1", created_at: new Date().toISOString(), messages: [] }])
     );
     const client = new ChatbaseClient("k", AGENT);
     expect(await client.fetchConversations(7)).toHaveLength(1);
@@ -207,5 +207,30 @@ describe("ChatbaseClient.fetchConversations", () => {
     // 1 initial attempt + MAX_RETRIES
     expect(fetchMock).toHaveBeenCalledTimes(4);
     vi.useRealTimers();
+  });
+
+  it("trims conversations the UTC-day date filter lets in from before the window", async () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        data: [
+          { id: "in", created_at: hoursAgo(2), messages: [] },
+          { id: "early", created_at: hoursAgo(30), messages: [] },
+          { id: "undated", created_at: "not a date", messages: [] },
+        ],
+      })
+    );
+    const client = new ChatbaseClient("k", AGENT);
+    const result = await client.fetchConversations(1);
+    expect(result.map((c) => c.id)).toEqual(["in", "undated"]);
+  });
+
+  it("fails fast instead of sleeping through an absurd Retry-After", async () => {
+    fetchMock.mockResolvedValue(
+      new Response("rate limited", { status: 429, headers: { "retry-after": "86400" } })
+    );
+    const client = new ChatbaseClient("k", AGENT);
+    await expect(client.fetchConversations(30)).rejects.toThrow(/rate limit/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
