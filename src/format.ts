@@ -406,3 +406,165 @@ export function trimAnalysisForDetail(
     unmatched_count: analysis.unmatched_count,
   };
 }
+
+// ── Theme evidence (drill-down) ──
+
+export type EvidenceSource = "all" | "tickets" | "feature_requests" | "chats";
+
+/**
+ * One record behind a theme: identifiers, links and metadata, plus the same
+ * scrubbed titles the analysis already exposes (for a chat, its opening
+ * customer message, truncated). Previews, descriptions, comments, tags and
+ * later chat turns never appear here.
+ */
+export type EvidenceRecord =
+  | {
+      type: "ticket";
+      ticket_number: number;
+      conversation_id: number;
+      subject: string;
+      status: string;
+      thread_count: number;
+      created_at: string;
+    }
+  | {
+      type: "feature_request";
+      id: string;
+      title: string;
+      url?: string;
+      votes: number;
+      comments_count: number;
+      status: string | null;
+      portal: string;
+      created_at: string;
+    }
+  | {
+      type: "chat";
+      id: string;
+      first_message: string;
+      channel: string;
+      agent: string;
+      answer_confidence: number | null;
+      created_at: string;
+    };
+
+export interface ThemeEvidence {
+  // Records per source for the whole theme, before the source filter and limit.
+  counts: { tickets: number; feature_requests: number; chats: number };
+  truncated: boolean;
+  evidence: EvidenceRecord[];
+}
+
+// A chat's opening message is free text of any length; cap it like a quote.
+const EVIDENCE_TEXT_MAX_CHARS = 200;
+const ELLIPSIS = "...";
+
+function truncateText(text: string): string {
+  if (text.length <= EVIDENCE_TEXT_MAX_CHARS) {
+    return text;
+  }
+  return text.slice(0, EVIDENCE_TEXT_MAX_CHARS - ELLIPSIS.length) + ELLIPSIS;
+}
+
+const EVIDENCE_TYPE_BY_SOURCE: Record<Exclude<EvidenceSource, "all">, EvidenceRecord["type"]> = {
+  tickets: "ticket",
+  feature_requests: "feature_request",
+  chats: "chat",
+};
+
+function toEvidenceRecord(
+  id: string,
+  maps: ReturnType<typeof buildLookupMaps>
+): EvidenceRecord | undefined {
+  const conv = maps.convMap.get(id);
+  if (conv) {
+    return {
+      type: "ticket",
+      ticket_number: conv.number,
+      conversation_id: conv.id,
+      subject: conv.subject,
+      status: conv.status,
+      thread_count: conv.threadCount,
+      created_at: conv.createdAt,
+    };
+  }
+
+  const req = maps.reqMap.get(id);
+  if (req) {
+    return {
+      type: "feature_request",
+      id: req.id,
+      title: req.title,
+      ...(req.url !== undefined && { url: req.url }),
+      votes: req.votes_count,
+      comments_count: req.comments_count,
+      status: req.status,
+      portal: req.portal,
+      created_at: req.created_at,
+    };
+  }
+
+  const chat = maps.deflectedMap.get(id);
+  if (chat) {
+    return {
+      type: "chat",
+      id: chat.id,
+      first_message: truncateText(chat.title),
+      channel: chat.channel,
+      agent: chat.agent,
+      answer_confidence: chat.answerConfidence,
+      created_at: chat.createdAt,
+    };
+  }
+
+  return undefined;
+}
+
+// Newest first; an unparseable date sorts last.
+function createdMsOf(record: EvidenceRecord): number {
+  const ms = new Date(record.created_at).getTime();
+  return Number.isFinite(ms) ? ms : -Infinity;
+}
+
+/** The records behind one theme, newest first, at most `limit` per source. */
+export function buildThemeEvidence(
+  theme: ThemeMatch,
+  conversations: FormattedConversation[],
+  featureRequests: FormattedFeatureRequest[],
+  deflected: FormattedDeflectedConversation[],
+  options: { source: EvidenceSource; limit: number }
+): ThemeEvidence {
+  const maps = buildLookupMaps(conversations, featureRequests, deflected);
+
+  const all: EvidenceRecord[] = [];
+  for (const dp of theme.data_points) {
+    const record = toEvidenceRecord(dp.id, maps);
+    if (record) {
+      all.push(record);
+    }
+  }
+
+  const counts = {
+    tickets: all.filter((r) => r.type === "ticket").length,
+    feature_requests: all.filter((r) => r.type === "feature_request").length,
+    chats: all.filter((r) => r.type === "chat").length,
+  };
+
+  // Newest first within each source, capped per source so a high-volume
+  // source (chats) can't push the others off the list.
+  const byNewest = (a: EvidenceRecord, b: EvidenceRecord) => createdMsOf(b) - createdMsOf(a);
+  const types =
+    options.source === "all"
+      ? Object.values(EVIDENCE_TYPE_BY_SOURCE)
+      : [EVIDENCE_TYPE_BY_SOURCE[options.source]];
+
+  let truncated = false;
+  const kept: EvidenceRecord[] = [];
+  for (const type of types) {
+    const ofType = all.filter((r) => r.type === type).sort(byNewest);
+    truncated ||= ofType.length > options.limit;
+    kept.push(...ofType.slice(0, options.limit));
+  }
+
+  return { counts, truncated, evidence: kept.sort(byNewest) };
+}

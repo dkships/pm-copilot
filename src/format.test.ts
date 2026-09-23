@@ -3,13 +3,20 @@ import {
   formatConversation,
   formatFeatureRequest,
   trimAnalysisForDetail,
+  buildThemeEvidence,
   capTitles,
   signalTypeOf,
   toErrorResult,
 } from "./format.js";
 import type { Conversation } from "./helpscout.js";
 import type { FeatureRequest } from "./productlift.js";
-import type { AnalysisResult, ThemeMatch } from "./feedback-analyzer.js";
+import type {
+  AnalysisResult,
+  ThemeMatch,
+  FormattedConversation,
+  FormattedFeatureRequest,
+  FormattedDeflectedConversation,
+} from "./feedback-analyzer.js";
 
 // ── Fixtures ──
 
@@ -251,6 +258,137 @@ describe("trimAnalysisForDetail", () => {
 });
 
 // ── helpers ──
+
+describe("buildThemeEvidence", () => {
+  const ticket = (id: number, createdAt: string): FormattedConversation => ({
+    id,
+    number: id + 1000,
+    subject: `ticket ${id}`,
+    status: "active",
+    createdAt,
+    closedAt: null,
+    customerEmail: "[REDACTED]",
+    tags: ["vip"],
+    preview: "raw preview text",
+    customerMessages: ["raw customer message"],
+    threadCount: 3,
+  });
+
+  const request = (id: string, createdAt: string): FormattedFeatureRequest => ({
+    id,
+    title: `request ${id}`,
+    description: "raw description text",
+    status: "open",
+    category: null,
+    votes_count: 12,
+    comments_count: 2,
+    portal: "portal-a",
+    url: `https://roadmap.example.com/p/${id}`,
+    created_at: createdAt,
+    updated_at: createdAt,
+    comments: [{ role: "user", comment: "raw comment text", created_at: null }],
+  });
+
+  const chat = (id: string, createdAt: string): FormattedDeflectedConversation => ({
+    id,
+    title: `chat ${id}`,
+    agent: "agent-a",
+    channel: "WhatsApp",
+    customerMessages: ["raw chat turn"],
+    turnCount: 2,
+    answerConfidence: 0.3,
+    createdAt,
+  });
+
+  const conversations = [ticket(1, "2026-09-01T00:00:00Z"), ticket(2, "2026-09-10T00:00:00Z")];
+  const requests = [request("r1", "2026-09-05T00:00:00Z")];
+  const chats = [chat("c1", "2026-09-20T00:00:00Z")];
+
+  const matched = theme({
+    data_points: [
+      { id: "hs-1", source: "REACTIVE", title: "ticket 1" },
+      { id: "hs-2", source: "REACTIVE", title: "ticket 2" },
+      { id: "pl-r1", source: "PROACTIVE", title: "request r1" },
+      { id: "cb-c1", source: "DEFLECTED", title: "chat c1" },
+    ],
+  });
+
+  it("returns every record type with its link fields, newest first", () => {
+    const result = buildThemeEvidence(matched, conversations, requests, chats, { source: "all", limit: 25 });
+    expect(result.counts).toEqual({ tickets: 2, feature_requests: 1, chats: 1 });
+    expect(result.truncated).toBe(false);
+    expect(result.evidence).toEqual([
+      {
+        type: "chat",
+        id: "c1",
+        first_message: "chat c1",
+        channel: "WhatsApp",
+        agent: "agent-a",
+        answer_confidence: 0.3,
+        created_at: "2026-09-20T00:00:00Z",
+      },
+      {
+        type: "ticket",
+        ticket_number: 1002,
+        conversation_id: 2,
+        subject: "ticket 2",
+        status: "active",
+        thread_count: 3,
+        created_at: "2026-09-10T00:00:00Z",
+      },
+      {
+        type: "feature_request",
+        id: "r1",
+        title: "request r1",
+        url: "https://roadmap.example.com/p/r1",
+        votes: 12,
+        comments_count: 2,
+        status: "open",
+        portal: "portal-a",
+        created_at: "2026-09-05T00:00:00Z",
+      },
+      {
+        type: "ticket",
+        ticket_number: 1001,
+        conversation_id: 1,
+        subject: "ticket 1",
+        status: "active",
+        thread_count: 3,
+        created_at: "2026-09-01T00:00:00Z",
+      },
+    ]);
+  });
+
+  it("never carries message bodies, previews, descriptions, comments or tags", () => {
+    const text = JSON.stringify(
+      buildThemeEvidence(matched, conversations, requests, chats, { source: "all", limit: 25 })
+    );
+    for (const raw of ["raw preview", "raw customer", "raw description", "raw comment", "raw chat", "vip", "REDACTED"]) {
+      expect(text).not.toContain(raw);
+    }
+  });
+
+  it("truncates a long opening chat message like a quote", () => {
+    const long = { ...chat("c1", "2026-09-20T00:00:00Z"), title: "x".repeat(500) };
+    const result = buildThemeEvidence(matched, [], [], [long], { source: "chats", limit: 25 });
+    const record = result.evidence[0];
+    expect(record?.type === "chat" && record.first_message.length).toBe(200);
+    expect(record?.type === "chat" && record.first_message.endsWith("...")).toBe(true);
+  });
+
+  it("narrows to one source and reports the full counts", () => {
+    const result = buildThemeEvidence(matched, conversations, requests, chats, { source: "tickets", limit: 25 });
+    expect(result.evidence.map((e) => e.type)).toEqual(["ticket", "ticket"]);
+    expect(result.counts).toEqual({ tickets: 2, feature_requests: 1, chats: 1 });
+  });
+
+  it("caps each source separately so a busy source can't bury the others", () => {
+    const result = buildThemeEvidence(matched, conversations, requests, chats, { source: "all", limit: 1 });
+    expect(result.evidence.map((e) => e.type)).toEqual(["chat", "ticket", "feature_request"]);
+    expect(result.evidence.find((e) => e.type === "ticket")).toMatchObject({ ticket_number: 1002 });
+    expect(result.truncated).toBe(true);
+  });
+});
 
 describe("capTitles", () => {
   it("caps titles at 50 and sets the truncation flag", () => {

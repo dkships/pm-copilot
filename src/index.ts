@@ -51,6 +51,7 @@ import {
   buildLookupMaps,
   signalTypeOf,
   capTitles,
+  buildThemeEvidence,
 } from "./format.js";
 import { METHODOLOGY_CONTENT, METHODOLOGY_VERSION } from "./methodology.js";
 
@@ -59,6 +60,8 @@ const { version: SERVER_VERSION } = createRequire(import.meta.url)(
 ) as { version: string };
 
 const MAX_FEATURE_REQUEST_LIMIT = 500;
+const DEFAULT_EVIDENCE_LIMIT = 25;
+const MAX_EVIDENCE_LIMIT = 200;
 
 // Every tool only reads from external APIs; clients can treat them as safe.
 const READ_ONLY_TOOL = {
@@ -1160,6 +1163,103 @@ server.registerTool("generate_product_plan", {
         {
           type: "text" as const,
           text,
+        },
+      ],
+    };
+  } catch (error) {
+    return toErrorResult(error);
+  }
+});
+
+server.registerTool("get_theme_evidence", {
+  title: "Get Theme Evidence",
+  annotations: READ_ONLY_TOOL,
+  description:
+    "Drill into one theme from synthesize_feedback or generate_product_plan: returns the " +
+    "individual support tickets, feature requests and AI chat conversations behind it, " +
+    "newest first, with ticket numbers, request URLs, votes, channels and dates. Pass the " +
+    "same filters as the analysis call within a few minutes to reuse its cached data (no " +
+    "new API calls). Returns identifiers, metadata and scrubbed titles (for chats, the " +
+    "opening customer message, truncated), not full conversations.",
+  inputSchema: {
+    theme_id: z
+      .string()
+      .describe("Theme to drill into, e.g. 'booking-scheduling' (the theme_id from the analysis)"),
+    source: z
+      .enum(["all", "tickets", "feature_requests", "chats"])
+      .default("all")
+      .describe("Which records to return (default: all)"),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_EVIDENCE_LIMIT)
+      .default(DEFAULT_EVIDENCE_LIMIT)
+      .describe(
+        `Max records per source (default: ${DEFAULT_EVIDENCE_LIMIT}, max: ${MAX_EVIDENCE_LIMIT}), ` +
+        "so a high-volume source can't crowd out the others"
+      ),
+    ...ANALYSIS_FILTERS,
+  },
+}, async ({ theme_id, source, limit, timeframe_days, top_voted_limit, include_comments, mailbox_id, mailbox_name, portal_name, agent_name, source_filter }) => {
+  try {
+    // Validate before fetching, so a typo costs no API calls.
+    const configuredThemes = loadThemesConfig().themes;
+    const themeIds = configuredThemes.map((t) => t.id);
+    if (!themeIds.includes(theme_id)) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error: unknown theme_id "${theme_id}". Available: ${themeIds.join(", ")}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    const { data } = await fetchForTool({
+      timeframe_days,
+      top_voted_limit,
+      include_comments,
+      mailbox_id,
+      mailbox_name,
+      portal_name,
+      agent_name,
+      source_filter,
+    });
+
+    if (data.fetchFailed) {
+      return allSourcesFailed(data.warnings);
+    }
+
+    // A configured theme with no matches in this window is absent, not an error.
+    const theme = data.analysis.themes.find((t) => t.theme_id === theme_id);
+    const evidence = theme
+      ? buildThemeEvidence(theme, data.conversations, data.featureRequests, data.deflected, {
+          source,
+          limit,
+        })
+      : { counts: { tickets: 0, feature_requests: 0, chats: 0 }, truncated: false, evidence: [] };
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            theme_id,
+            label: theme?.label ?? configuredThemes.find((t) => t.id === theme_id)?.label ?? null,
+            priority_score: theme?.priority_score ?? null,
+            ...(!theme && { note: "No matches for this theme in this window." }),
+            source,
+            limit,
+            timeframe_days,
+            fetched_at: data.fetchedAt,
+            pii_scrubbing_applied: true,
+            pii_categories_redacted: data.piiCategoriesRedacted,
+            ...(data.warnings.length > 0 && { warnings: data.warnings }),
+            ...evidence,
+          }),
         },
       ],
     };
