@@ -135,7 +135,7 @@ Builds a prioritized plan with evidence and customer quotes. Takes the common fi
 
 ### `get_theme_evidence`
 
-Drill into one theme: the individual tickets, feature requests and chats behind it, newest first, with ticket numbers, request URLs, votes, channels and dates. Pass the same common filters as the analysis call and it reuses the cached data, so it makes no new API calls. Returns identifiers and scrubbed titles only, never message bodies.
+Drill into one theme: the individual tickets, feature requests and chats behind it, newest first, with ticket numbers, request URLs, votes, channels and dates. Pass the same common filters within a few minutes of the analysis call and it reuses the cached data, so it makes no new API calls. Returns identifiers, metadata and scrubbed titles (for a chat, its opening customer message, truncated to 200 characters), not full conversations.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|

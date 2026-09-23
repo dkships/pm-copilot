@@ -1178,8 +1178,9 @@ server.registerTool("get_theme_evidence", {
     "Drill into one theme from synthesize_feedback or generate_product_plan: returns the " +
     "individual support tickets, feature requests and AI chat conversations behind it, " +
     "newest first, with ticket numbers, request URLs, votes, channels and dates. Pass the " +
-    "same filters as the analysis call to reuse its cached data (no new API calls). " +
-    "Returns identifiers and scrubbed titles only, never message bodies.",
+    "same filters as the analysis call within a few minutes to reuse its cached data (no " +
+    "new API calls). Returns identifiers, metadata and scrubbed titles (for chats, the " +
+    "opening customer message, truncated), not full conversations.",
   inputSchema: {
     theme_id: z
       .string()
@@ -1203,7 +1204,8 @@ server.registerTool("get_theme_evidence", {
 }, async ({ theme_id, source, limit, timeframe_days, top_voted_limit, include_comments, mailbox_id, mailbox_name, portal_name, agent_name, source_filter }) => {
   try {
     // Validate before fetching, so a typo costs no API calls.
-    const themeIds = loadThemesConfig().themes.map((t) => t.id);
+    const configuredThemes = loadThemesConfig().themes;
+    const themeIds = configuredThemes.map((t) => t.id);
     if (!themeIds.includes(theme_id)) {
       return {
         content: [
@@ -1246,8 +1248,9 @@ server.registerTool("get_theme_evidence", {
           type: "text" as const,
           text: JSON.stringify({
             theme_id,
-            label: theme?.label ?? null,
+            label: theme?.label ?? configuredThemes.find((t) => t.id === theme_id)?.label ?? null,
             priority_score: theme?.priority_score ?? null,
+            ...(!theme && { note: "No matches for this theme in this window." }),
             source,
             limit,
             timeframe_days,

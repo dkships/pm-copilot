@@ -9,9 +9,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - `get_theme_evidence`: drill into one theme and get the tickets, feature requests and chats
   behind it, with ticket numbers, request URLs, votes, channels and dates. It reuses the analysis
   cache when called with the same filters (a live call returned in 2ms). `limit` applies per
-  source, so 244 chats can't bury 23 feature requests. Returns identifiers and scrubbed titles
-  only. HelpScout web links are not built, because the URL format couldn't be verified; ticket
-  numbers are returned instead.
+  source, so 244 chats can't bury 23 feature requests. Returns identifiers, metadata and scrubbed
+  titles; a chat's opening message is truncated to 200 characters like a quote. HelpScout web
+  links are not built, because the URL format couldn't be verified; ticket numbers are returned
+  instead.
 
 ### Changed
 

@@ -412,9 +412,10 @@ export function trimAnalysisForDetail(
 export type EvidenceSource = "all" | "tickets" | "feature_requests" | "chats";
 
 /**
- * One record behind a theme: identifiers, links and metadata only. Titles are
- * the same scrubbed titles the analysis already exposes; message bodies,
- * previews, descriptions, comments and tags never appear here.
+ * One record behind a theme: identifiers, links and metadata, plus the same
+ * scrubbed titles the analysis already exposes (for a chat, its opening
+ * customer message, truncated). Previews, descriptions, comments, tags and
+ * later chat turns never appear here.
  */
 export type EvidenceRecord =
   | {
@@ -452,6 +453,17 @@ export interface ThemeEvidence {
   counts: { tickets: number; feature_requests: number; chats: number };
   truncated: boolean;
   evidence: EvidenceRecord[];
+}
+
+// A chat's opening message is free text of any length; cap it like a quote.
+const EVIDENCE_TEXT_MAX_CHARS = 200;
+const ELLIPSIS = "...";
+
+function truncateText(text: string): string {
+  if (text.length <= EVIDENCE_TEXT_MAX_CHARS) {
+    return text;
+  }
+  return text.slice(0, EVIDENCE_TEXT_MAX_CHARS - ELLIPSIS.length) + ELLIPSIS;
 }
 
 const EVIDENCE_TYPE_BY_SOURCE: Record<Exclude<EvidenceSource, "all">, EvidenceRecord["type"]> = {
@@ -497,7 +509,7 @@ function toEvidenceRecord(
     return {
       type: "chat",
       id: chat.id,
-      first_message: chat.title,
+      first_message: truncateText(chat.title),
       channel: chat.channel,
       agent: chat.agent,
       answer_confidence: chat.answerConfidence,

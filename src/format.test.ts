@@ -368,6 +368,14 @@ describe("buildThemeEvidence", () => {
     }
   });
 
+  it("truncates a long opening chat message like a quote", () => {
+    const long = { ...chat("c1", "2026-09-20T00:00:00Z"), title: "x".repeat(500) };
+    const result = buildThemeEvidence(matched, [], [], [long], { source: "chats", limit: 25 });
+    const record = result.evidence[0];
+    expect(record?.type === "chat" && record.first_message.length).toBe(200);
+    expect(record?.type === "chat" && record.first_message.endsWith("...")).toBe(true);
+  });
+
   it("narrows to one source and reports the full counts", () => {
     const result = buildThemeEvidence(matched, conversations, requests, chats, { source: "tickets", limit: 25 });
     expect(result.evidence.map((e) => e.type)).toEqual(["ticket", "ticket"]);
