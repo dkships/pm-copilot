@@ -4,6 +4,15 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- `get_theme_evidence`: drill into one theme and get the tickets, feature requests and chats
+  behind it, with ticket numbers, request URLs, votes, channels and dates. It reuses the analysis
+  cache when called with the same filters (a live call returned in 2ms). `limit` applies per
+  source, so 244 chats can't bury 23 feature requests. Returns identifiers and scrubbed titles
+  only. HelpScout web links are not built, because the URL format couldn't be verified; ticket
+  numbers are returned instead.
+
 ### Changed
 
 - `zod` 4.4.3 → 4.6.5 and `@types/node` 26.2.0 → 26.6.2 (#41). Published tool schemas are

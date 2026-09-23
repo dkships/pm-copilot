@@ -133,6 +133,18 @@ Builds a prioritized plan with evidence and customer quotes. Takes the common fi
 | `preview_only` | boolean | false | Audit mode: show what data *would* be sent, without fetching it |
 | `format` | string | `"json"` | `"json"` (structured) or `"markdown"` (ready-to-read brief) |
 
+### `get_theme_evidence`
+
+Drill into one theme: the individual tickets, feature requests and chats behind it, newest first, with ticket numbers, request URLs, votes, channels and dates. Pass the same common filters as the analysis call and it reuses the cached data, so it makes no new API calls. Returns identifiers and scrubbed titles only, never message bodies.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `theme_id` | string | — | The `theme_id` from the analysis, e.g. `booking-scheduling` |
+| `source` | string | `"all"` | `"all"`, `"tickets"`, `"feature_requests"` or `"chats"` |
+| `limit` | number | 25 | Records per source (1-200), so a busy source can't crowd out the others |
+
+Plus the common filters.
+
 ### `get_feature_requests`
 
 Raw ProductLift access. Each request includes its public `url`.
