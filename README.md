@@ -113,6 +113,7 @@ Shared by `synthesize_feedback` and `generate_product_plan`.
 | `portal_name` | string | — | ProductLift portal |
 | `agent_name` | string | — | Chatbase agent |
 | `source_filter` | string | — | Chatbase conversation source, comma-separated for multiple (e.g. `Widget or Iframe` or `WhatsApp,API`). Case-insensitive |
+| `include_comments` | boolean | false | Also fetch customer comment text on feature requests (scrubbed; names and admin replies dropped) for theme matching and quotes. A modest gain for one extra call per request with comments; can take close to a minute on large portals |
 | `detail_level` | string | `"summary"` | `"summary"`, `"standard"`, or `"full"`. Output grows with each step |
 
 Run `list_sources` to see valid mailbox, portal, agent and source names.
@@ -141,6 +142,8 @@ Raw ProductLift access. Each request includes its public `url`.
 | `portal_name` | string | — | Filter to one portal |
 | `include_comments` | boolean | true | Include comments on each request |
 | `status` | string | — | Filter by status (case-insensitive), e.g. `open`, `planned`, `completed` |
+| `limit` | number | — | Requests to return per portal (1-500), after the status filter and sort. Comments are fetched only for what's kept |
+| `sort` | string | — | `"votes"` or `"recent"`. Omit to keep the portal's order |
 
 ### `list_sources`
 

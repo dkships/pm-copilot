@@ -6,12 +6,19 @@ const PAGE_SIZE = 10; // API max per request
 const MAX_PAGES = 500;
 const MAX_429_RETRIES = 3;
 const RETRY_BACKOFF_MS = 2_000;
-// A Retry-After beyond this fails fast rather than hanging the tool call.
-const MAX_RETRY_WAIT_MS = 30_000;
+// ProductLift allows 120 requests per 60s window (x-ratelimit-limit) and
+// asks for up to the rest of the window on a 429. Longer than one window
+// means something is off: fail fast rather than hang the tool call.
+const MAX_RETRY_WAIT_MS = 60_000;
 // The raw post list doesn't depend on any tool parameter (date and vote
 // filtering run client-side), so one download serves every call for a while.
 const POSTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const HTTP_TOO_MANY_REQUESTS = 429;
+// Requests in flight per portal, for both post pages and comments. Sequential
+// fetching took 33s to page a 544-post portal and pushed an analysis with
+// comments past the 60s MCP client timeout. 429s are retried if this runs
+// into the portal's rate limit.
+const REQUEST_CONCURRENCY = 6;
 
 export interface PortalConfig {
   name: string;
@@ -73,12 +80,56 @@ export interface FeatureRequestsResult {
   commentFailures: number;
 }
 
+export type FeatureSort = "votes" | "recent";
+
+export interface FeatureRequestOptions {
+  includeComments?: boolean;
+  // Case-insensitive status name; null-status posts never match.
+  status?: string;
+  // Posts to keep after the status filter and sort, per portal.
+  limit?: number;
+  // Omitted keeps the API's order.
+  sort?: FeatureSort;
+}
+
 export interface FetchPostsOptions {
   maxPages?: number;
   pageDelayMs?: number;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Map over items with at most `limit` calls in flight; results keep input
+ * order. The first failure rejects, and no worker claims a new item after it,
+ * so a failed portal doesn't keep spending the rate limit.
+ */
+async function mapConcurrent<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  let failed = false;
+
+  // Each worker claims the next unclaimed item until none are left.
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const index = next++;
+      try {
+        results[index] = await fn(items[index] as T);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  };
+
+  const workerCount = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
+}
 
 export class ProductLiftClient {
   private portal: PortalConfig;
@@ -103,6 +154,16 @@ export class ProductLiftClient {
     return [...posts]
       .sort((a, b) => (b.votes_count ?? 0) - (a.votes_count ?? 0))
       .slice(0, limit);
+  }
+
+  static sortByRecency(posts: PostSummary[], limit: number): PostSummary[] {
+    // An unparseable created_at sorts last rather than poisoning the order.
+    const createdMs = (p: PostSummary) => {
+      // new Date(null) is 1970, not invalid, so check for a value first.
+      const ms = p.created_at ? new Date(p.created_at).getTime() : NaN;
+      return Number.isFinite(ms) ? ms : -Infinity;
+    };
+    return [...posts].sort((a, b) => createdMs(b) - createdMs(a)).slice(0, limit);
   }
 
   private async apiGet<T>(
@@ -166,41 +227,88 @@ export class ProductLiftClient {
 
     const maxPages = options.maxPages ?? MAX_PAGES;
     const pageDelayMs = options.pageDelayMs ?? PAGE_DELAY_MS;
-    const allPosts: PostSummary[] = [];
-    let skip = 0;
 
-    for (let pageNum = 1; ; pageNum++) {
-      if (pageNum > maxPages) {
-        throw new Error(
-          `ProductLift portal "${this.portal.name}" returned more than ${maxPages} pages; stopped paging`
-        );
+    // The first page reports the total, so the rest can be fetched in
+    // parallel by skip offset:
+    //
+    //   page 1 (skip 0) ──> total = 35, page size = 10
+    //   skip 10 ┐
+    //   skip 20 ├─ REQUEST_CONCURRENCY at a time
+    //   skip 30 ┘
+    //   last page still says hasMore? ──> continue one page at a time
+    const first = await this.fetchPostsPage(0);
+    const pages: PaginatedResponse<PostSummary>[] = [first];
+    const pageSize = first.data.length;
+    // Offset of the last page fetched; the tail continues from it.
+    let lastSkip = 0;
+
+    if (first.hasMore && pageSize > 0 && Number.isFinite(first.total)) {
+      // Check the cap before planning offsets, so an absurd total can't
+      // allocate a huge list first.
+      const remainingPages = Math.ceil((first.total - pageSize) / pageSize);
+      if (remainingPages + 1 > maxPages) {
+        throw this.tooManyPages(maxPages);
       }
-
-      const page = await this.apiGet<PaginatedResponse<PostSummary>>(
-        "/api/v1/posts",
-        { skip: String(skip), limit: String(PAGE_SIZE) }
+      const skips = Array.from({ length: Math.max(0, remainingPages) }, (_, i) => (i + 1) * pageSize);
+      pages.push(
+        ...(await mapConcurrent(skips, REQUEST_CONCURRENCY, async (skip) => {
+          await sleep(pageDelayMs);
+          return this.fetchPostsPage(skip);
+        }))
       );
-
-      // A 200 with no data array (an error body) must fail the portal, not
-      // end paging early and get cached as the full list.
-      if (!Array.isArray(page.data)) {
-        throw new Error(
-          `ProductLift portal "${this.portal.name}" returned a malformed page at skip=${skip}`
-        );
-      }
-      const data = page.data;
-      allPosts.push(...data);
-
-      if (!page.hasMore || data.length === 0) {
-        break;
-      }
-
-      skip += data.length;
-      await sleep(pageDelayMs);
+      lastSkip = skips[skips.length - 1] ?? 0;
     }
+
+    // Sequential tail: covers a missing total, and posts added after page 1.
+    let last = pages[pages.length - 1] ?? first;
+    let skip = lastSkip + last.data.length;
+    while (last.hasMore && last.data.length > 0) {
+      if (pages.length >= maxPages) {
+        throw this.tooManyPages(maxPages);
+      }
+      await sleep(pageDelayMs);
+      last = await this.fetchPostsPage(skip);
+      pages.push(last);
+      skip += last.data.length;
+    }
+
+    // Offsets can shift if a post is added or removed mid-fetch; keep the
+    // first copy of each id.
+    const seen = new Set<string>();
+    const allPosts = pages
+      .flatMap((p) => p.data)
+      .filter((post) => {
+        if (seen.has(post.id)) {
+          return false;
+        }
+        seen.add(post.id);
+        return true;
+      });
 
     this.postsCache = { posts: allPosts, fetchedAt: Date.now() };
     return allPosts;
+  }
+
+  private async fetchPostsPage(skip: number): Promise<PaginatedResponse<PostSummary>> {
+    const page = await this.apiGet<PaginatedResponse<PostSummary>>("/api/v1/posts", {
+      skip: String(skip),
+      limit: String(PAGE_SIZE),
+    });
+
+    // A 200 with no data array (an error body) must fail the portal, not end
+    // paging early and get cached as the full list.
+    if (!Array.isArray(page.data)) {
+      throw new Error(
+        `ProductLift portal "${this.portal.name}" returned a malformed page at skip=${skip}`
+      );
+    }
+    return page;
+  }
+
+  private tooManyPages(maxPages: number): Error {
+    return new Error(
+      `ProductLift portal "${this.portal.name}" returned more than ${maxPages} pages; stopped paging`
+    );
   }
 
   async fetchComments(postId: string): Promise<Comment[]> {
@@ -213,45 +321,57 @@ export class ProductLiftClient {
     return res.data ? [res.data] : [];
   }
 
-  async fetchFeatureRequests(
-    includeComments: boolean,
-    statusFilter?: string
-  ): Promise<FeatureRequestsResult> {
+  async fetchFeatureRequests(options: FeatureRequestOptions): Promise<FeatureRequestsResult> {
     let posts = await this.fetchPosts();
 
-    // Filter by status BEFORE the comment-fetch loop so filtered-out posts
-    // cost no comment API calls. Matches the formatted-status semantics:
-    // status name compared case-insensitively, null-status posts excluded.
-    if (statusFilter !== undefined) {
-      posts = posts.filter(
-        (p) => p.status?.name?.toLowerCase() === statusFilter.toLowerCase()
-      );
+    // Filter, sort and limit BEFORE the comment-fetch loop so dropped posts
+    // cost no comment API calls. Status matches the formatted-status
+    // semantics: name compared case-insensitively, null-status posts excluded.
+    const { status } = options;
+    if (status !== undefined) {
+      posts = posts.filter((p) => p.status?.name?.toLowerCase() === status.toLowerCase());
     }
 
-    const requests: FeatureRequest[] = [];
+    const limit = options.limit ?? posts.length;
+    if (options.sort === "votes") {
+      posts = ProductLiftClient.sortByVotes(posts, limit);
+    } else if (options.sort === "recent") {
+      posts = ProductLiftClient.sortByRecency(posts, limit);
+    } else {
+      posts = posts.slice(0, limit);
+    }
+
+    if (options.includeComments) {
+      return this.withComments(posts);
+    }
+    return {
+      requests: posts.map((post) => ({ ...post, comments: [], portal: this.portal.name })),
+      commentFailures: 0,
+    };
+  }
+
+  /**
+   * Fetch comments for the given posts, one call each, REQUEST_CONCURRENCY at
+   * a time, with results in the input order. A post that reports zero comments
+   * costs no call; a missing count still fetches. A failed fetch returns the
+   * post without comments and is counted so the caller can warn.
+   */
+  async withComments(posts: PostSummary[]): Promise<FeatureRequestsResult> {
     let commentFailures = 0;
 
-    for (const post of posts) {
+    const requests = await mapConcurrent(posts, REQUEST_CONCURRENCY, async (post) => {
       let comments: Comment[] = [];
-      // A post that reports zero comments costs no call; a missing count
-      // still fetches.
       const mayHaveComments = (post.comments_count ?? 1) > 0;
-      if (includeComments && mayHaveComments) {
+      if (mayHaveComments) {
         await sleep(PAGE_DELAY_MS);
         try {
           comments = await this.fetchComments(post.id);
         } catch {
-          // Returned without comments, and counted so the caller can warn.
           commentFailures++;
         }
       }
-
-      requests.push({
-        ...post,
-        comments,
-        portal: this.portal.name,
-      });
-    }
+      return { ...post, comments, portal: this.portal.name };
+    });
 
     return { requests, commentFailures };
   }

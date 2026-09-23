@@ -21,6 +21,9 @@ const MAX_RETRIES = 3;
 // hanging the tool call.
 const MAX_RETRY_WAIT_MS = 30_000;
 const DAY_MS = 86_400_000;
+// Fallback backoff when a 429 has no Retry-After: 2s, 4s, 8s. The three
+// together must outlast the 10s rate window or every retry lands in it.
+const RETRY_BACKOFF_MS = 2_000;
 
 const API_BASE = "https://www.chatbase.co/api/v1";
 
@@ -163,7 +166,7 @@ export class ChatbaseClient {
         const header = Number(res.headers.get("retry-after"));
         const waitMs = Number.isFinite(header) && header > 0
           ? header * 1000
-          : 1000 * 2 ** attempt;
+          : RETRY_BACKOFF_MS * 2 ** attempt;
         if (waitMs > MAX_RETRY_WAIT_MS) {
           throw new Error(
             `Chatbase rate limit for agent "${this.agent.name}": asked to wait ${Math.round(waitMs / 1000)}s`

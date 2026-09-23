@@ -58,6 +58,8 @@ const { version: SERVER_VERSION } = createRequire(import.meta.url)(
   resolve(PROJECT_ROOT, "package.json")
 ) as { version: string };
 
+const MAX_FEATURE_REQUEST_LIMIT = 500;
+
 // Every tool only reads from external APIs; clients can treat them as safe.
 const READ_ONLY_TOOL = {
   readOnlyHint: true,
@@ -157,6 +159,7 @@ server.registerResource(
 interface FetchParams {
   timeframe_days: number;
   top_voted_limit: number;
+  include_comments: boolean;
   mailbox_id?: string;
   portal_name?: string;
   agent_name?: string;
@@ -312,11 +315,12 @@ async function fetchChatbase(
 async function fetchProductLift(
   params: FetchParams,
   piiSink: Set<string>
-): Promise<SourceLeg & { requests: FormattedFeatureRequest[] }> {
+): Promise<SourceLeg & { requests: FormattedFeatureRequest[]; commentFailures: number }> {
   if (portalConfigs.length === 0) {
     // Same reasoning as the Chatbase leg: don't let a filter look applied.
     return {
       requests: [],
+      commentFailures: 0,
       attempted: 0,
       failed: 0,
       warnings: params.portal_name
@@ -330,6 +334,7 @@ async function fetchProductLift(
     // A typo'd portal name would otherwise read as "no feature requests".
     return {
       requests: [],
+      commentFailures: 0,
       attempted: 0,
       failed: 0,
       warnings: [
@@ -354,19 +359,32 @@ async function fetchProductLift(
         return true;
       });
 
-      // Comment text is not fetched on the analysis path (see preview_only).
-      return combined.map((post) =>
-        formatFeatureRequest({ ...post, comments: [], portal: client.portalName }, piiSink)
-      );
+      // Comment text is opt-in: one call per post with comments, so it
+      // costs time, and it widens what customer text leaves the server.
+      if (!params.include_comments) {
+        return {
+          formatted: combined.map((post) =>
+            formatFeatureRequest({ ...post, comments: [], portal: client.portalName }, piiSink)
+          ),
+          commentFailures: 0,
+        };
+      }
+      const { requests, commentFailures } = await client.withComments(combined);
+      return {
+        formatted: requests.map((r) => formatFeatureRequest(r, piiSink)),
+        commentFailures,
+      };
     })
   );
 
   const requests: FormattedFeatureRequest[] = [];
   const warnings: string[] = [];
   let failed = 0;
+  let commentFailures = 0;
   results.forEach((result, i) => {
     if (result.status === "fulfilled") {
-      requests.push(...result.value);
+      requests.push(...result.value.formatted);
+      commentFailures += result.value.commentFailures;
     } else {
       failed++;
       const msg =
@@ -377,7 +395,14 @@ async function fetchProductLift(
     }
   });
 
-  return { requests, warnings, attempted: clients.length, failed };
+  if (commentFailures > 0) {
+    warnings.push(
+      `Comments could not be fetched for ${commentFailures} feature request(s); ` +
+        "they are analyzed without comments."
+    );
+  }
+
+  return { requests, commentFailures, warnings, attempted: clients.length, failed };
 }
 
 // ── Response cache ──
@@ -402,7 +427,7 @@ function cacheKey(params: FetchParams): string {
   // Chatbase leg, so slicing one window by channel re-fetches HelpScout and
   // ProductLift each time. Correctness over efficiency; per-source caching is
   // the follow-up if channel slicing becomes a hot path.
-  return `${params.timeframe_days}|${params.mailbox_id ?? ""}|${params.portal_name ?? ""}|${params.top_voted_limit}|${params.agent_name ?? ""}|${params.source_filter ?? ""}`;
+  return `${params.timeframe_days}|${params.mailbox_id ?? ""}|${params.portal_name ?? ""}|${params.top_voted_limit}|${params.agent_name ?? ""}|${params.source_filter ?? ""}|${params.include_comments ? "comments" : ""}`;
 }
 
 async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
@@ -466,7 +491,7 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
     featureRequests = leg.requests;
     warnings.push(...leg.warnings);
     productliftFailed = leg.attempted > 0 && leg.failed === leg.attempted;
-    productliftPartial = leg.failed > 0;
+    productliftPartial = leg.failed > 0 || leg.commentFailures > 0;
   } else {
     productliftFailed = true;
     const msg = plResult.reason instanceof Error
@@ -541,6 +566,107 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
 
 // ── Tools ──
 
+// Filters shared by synthesize_feedback and generate_product_plan.
+const ANALYSIS_FILTERS = {
+  timeframe_days: z
+    .number()
+    .int()
+    .min(1)
+    .max(90)
+    .default(30)
+    .describe("Number of days to look back (default: 30, max: 90)"),
+  top_voted_limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .default(50)
+    .describe(
+      "Top-voted feature requests to include per portal (default: 50). " +
+      "Recent requests within the timeframe are always included as well."
+    ),
+  mailbox_id: z
+    .string()
+    .optional()
+    .describe("HelpScout mailbox ID to filter by (optional). Prefer mailbox_name."),
+  mailbox_name: z
+    .string()
+    .optional()
+    .describe(
+      "HelpScout mailbox name to filter by (optional, case-insensitive). " +
+      "Resolved to an ID automatically — run list_sources to see available names."
+    ),
+  portal_name: z
+    .string()
+    .optional()
+    .describe("ProductLift portal name to filter by (optional)"),
+  agent_name: z
+    .string()
+    .optional()
+    .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
+  source_filter: z
+    .string()
+    .optional()
+    .describe(
+      "Chatbase conversation source(s) to filter by (optional), comma-separated for " +
+      "multiple. Case-insensitive. Examples: 'Widget or Iframe', 'WhatsApp,API'. " +
+      "Run list_sources to see available sources."
+    ),
+  include_comments: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Also fetch customer comment text on feature requests (PII-scrubbed, commenter names and " +
+      "admin replies dropped) for theme matching and quotes (default: false). Expect a modest " +
+      "gain: a few extra matches per theme. Costs one API call per request with comments " +
+      "against ProductLift's 120-a-minute limit, so on large portals a call can take close " +
+      "to a minute."
+    ),
+};
+
+interface AnalysisFilterArgs {
+  timeframe_days: number;
+  top_voted_limit: number;
+  include_comments: boolean;
+  mailbox_id?: string;
+  mailbox_name?: string;
+  portal_name?: string;
+  agent_name?: string;
+  source_filter?: string;
+}
+
+/**
+ * Resolve the mailbox name and run the cached fetch + analysis. The name is
+ * resolved here, at the handler boundary, so the cache key only ever sees an ID.
+ */
+async function fetchForTool(
+  args: AnalysisFilterArgs
+): Promise<{ data: FetchedData; resolvedMailboxId: string | undefined }> {
+  const resolvedMailboxId = await resolveMailboxId(args.mailbox_name, args.mailbox_id);
+  const data = await cachedFetchAndAnalyze({
+    timeframe_days: args.timeframe_days,
+    top_voted_limit: args.top_voted_limit,
+    include_comments: args.include_comments,
+    mailbox_id: resolvedMailboxId,
+    portal_name: args.portal_name,
+    agent_name: args.agent_name,
+    source_filter: args.source_filter,
+  });
+  return { data, resolvedMailboxId };
+}
+
+function allSourcesFailed(warnings: string[]) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `Error: all data sources failed to fetch.\n${warnings.join("\n")}`,
+      },
+    ],
+    isError: true,
+  };
+}
+
 server.registerTool("synthesize_feedback", {
   title: "Synthesize Customer Feedback",
   annotations: READ_ONLY_TOOL,
@@ -555,50 +681,7 @@ server.registerTool("synthesize_feedback", {
     "tool — use generate_product_plan for a ranked plan with KPI context. " +
     `Configured portals: ${describePortals()}. Configured Chatbase agents: ${describeAgents()}`,
   inputSchema: {
-    timeframe_days: z
-      .number()
-      .int()
-      .min(1)
-      .max(90)
-      .default(30)
-      .describe("Number of days to look back (default: 30, max: 90)"),
-    top_voted_limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(200)
-      .default(50)
-      .describe(
-        "Top-voted feature requests to include per portal (default: 50). " +
-        "Recent requests within the timeframe are always included as well."
-      ),
-    mailbox_id: z
-      .string()
-      .optional()
-      .describe("HelpScout mailbox ID to filter by (optional). Prefer mailbox_name."),
-    mailbox_name: z
-      .string()
-      .optional()
-      .describe(
-        "HelpScout mailbox name to filter by (optional, case-insensitive). " +
-        "Resolved to an ID automatically — run list_sources to see available names."
-      ),
-    portal_name: z
-      .string()
-      .optional()
-      .describe("ProductLift portal name to filter by (optional)"),
-    agent_name: z
-      .string()
-      .optional()
-      .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
-    source_filter: z
-      .string()
-      .optional()
-      .describe(
-        "Chatbase conversation source(s) to filter by (optional), comma-separated for " +
-        "multiple. Case-insensitive. Examples: 'Widget or Iframe', 'WhatsApp,API'. " +
-        "Run list_sources to see available sources."
-      ),
+    ...ANALYSIS_FILTERS,
     detail_level: z
       .enum(["summary", "standard", "full"])
       .default("summary")
@@ -609,29 +692,21 @@ server.registerTool("synthesize_feedback", {
         "'full' (several hundred KB): all data points — for export/dashboard use, not LLM consumption."
       ),
   },
-}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, source_filter, detail_level }) => {
+}, async ({ timeframe_days, top_voted_limit, include_comments, mailbox_id, mailbox_name, portal_name, agent_name, source_filter, detail_level }) => {
   try {
-    // Resolve name → ID at the handler boundary; the cache key only ever sees an ID.
-    const resolvedMailboxId = await resolveMailboxId(mailbox_name, mailbox_id);
-    const data = await cachedFetchAndAnalyze({
+    const { data, resolvedMailboxId } = await fetchForTool({
       timeframe_days,
       top_voted_limit,
-      mailbox_id: resolvedMailboxId,
+      include_comments,
+      mailbox_id,
+      mailbox_name,
       portal_name,
       agent_name,
       source_filter,
     });
 
     if (data.fetchFailed) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: all data sources failed to fetch.\n${data.warnings.join("\n")}`,
-          },
-        ],
-        isError: true,
-      };
+      return allSourcesFailed(data.warnings);
     }
 
     const trimmedAnalysis = trimAnalysisForDetail(
@@ -658,6 +733,7 @@ server.registerTool("synthesize_feedback", {
               // when unconfigured, fetchChatbase warns and this reads null.
               source_filter: chatbaseClients.length > 0 ? (source_filter ?? "all") : null,
               top_voted_limit,
+              include_comments,
               // When the data was fetched — up to the cache TTL old on a hit.
               fetched_at: data.fetchedAt,
               pii_scrubbing_applied: true,
@@ -816,50 +892,7 @@ server.registerTool("generate_product_plan", {
     "Use synthesize_feedback instead for the underlying theme analysis without plan framing. " +
     `Configured portals: ${describePortals()}. Configured Chatbase agents: ${describeAgents()}`,
   inputSchema: {
-    timeframe_days: z
-      .number()
-      .int()
-      .min(1)
-      .max(90)
-      .default(30)
-      .describe("Number of days to look back (default: 30, max: 90)"),
-    top_voted_limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(200)
-      .default(50)
-      .describe(
-        "Top-voted feature requests to include per portal (default: 50). " +
-        "Recent requests within the timeframe are always included as well."
-      ),
-    mailbox_id: z
-      .string()
-      .optional()
-      .describe("HelpScout mailbox ID to filter by (optional). Prefer mailbox_name."),
-    mailbox_name: z
-      .string()
-      .optional()
-      .describe(
-        "HelpScout mailbox name to filter by (optional, case-insensitive). " +
-        "Resolved to an ID automatically — run list_sources to see available names."
-      ),
-    portal_name: z
-      .string()
-      .optional()
-      .describe("ProductLift portal name to filter by (optional)"),
-    agent_name: z
-      .string()
-      .optional()
-      .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
-    source_filter: z
-      .string()
-      .optional()
-      .describe(
-        "Chatbase conversation source(s) to filter by (optional), comma-separated for " +
-        "multiple. Case-insensitive. Examples: 'Widget or Iframe', 'WhatsApp,API'. " +
-        "Run list_sources to see available sources."
-      ),
+    ...ANALYSIS_FILTERS,
     kpi_context: z
       .string()
       .optional()
@@ -898,7 +931,7 @@ server.registerTool("generate_product_plan", {
         "'markdown': a ready-to-read product brief (ranked table + quotes) for planning docs."
       ),
   },
-}, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, source_filter, kpi_context, max_priorities, preview_only, detail_level, format }) => {
+}, async ({ timeframe_days, top_voted_limit, include_comments, mailbox_id, mailbox_name, portal_name, agent_name, source_filter, kpi_context, max_priorities, preview_only, detail_level, format }) => {
   try {
     // Preview mode: show what would be sent without fetching
     if (preview_only) {
@@ -931,11 +964,29 @@ server.registerTool("generate_product_plan", {
                   fields_NOT_sent: ["customer email (always redacted)", "full thread/message bodies (never fetched)", "attachments"],
                 },
                 productlift: {
-                  will_fetch: portalConfigs.length > 0 ? "feature request posts (comment text is NOT fetched by this tool)" : "SKIPPED (not configured)",
+                  will_fetch: portalConfigs.length === 0
+                    ? "SKIPPED (not configured)"
+                    : include_comments
+                      ? "feature request posts plus comment text (include_comments: true)"
+                      : "feature request posts (comment text is NOT fetched; set include_comments to add it)",
                   portals: filteredPortals,
                   top_voted_limit,
-                  fields_sent: ["title (PII-scrubbed)", "description (PII-scrubbed)", "vote count", "comment count", "status", "timestamps"],
-                  fields_NOT_sent: ["comment text (not fetched by this tool)", "voter identities", "commenter names and emails"],
+                  fields_sent: [
+                    "title (PII-scrubbed)",
+                    "description (PII-scrubbed)",
+                    "url (PII-scrubbed)",
+                    ...(include_comments ? ["customer comment text (PII-scrubbed; admin replies excluded)"] : []),
+                    "vote count",
+                    "comment count",
+                    "status",
+                    "timestamps",
+                  ],
+                  fields_NOT_sent: [
+                    ...(include_comments ? [] : ["comment text (include_comments is false)"]),
+                    "voter identities",
+                    "commenter names and emails",
+                    ...(include_comments ? ["admin/staff comment replies"] : []),
+                  ],
                 },
                 chatbase: {
                   will_fetch: chatbaseClients.length > 0
@@ -967,27 +1018,19 @@ server.registerTool("generate_product_plan", {
     }
 
     // Full execution: fetch, analyze, build plan.
-    // Resolve name → ID at the handler boundary; the cache key only ever sees an ID.
-    const resolvedMailboxId = await resolveMailboxId(mailbox_name, mailbox_id);
-    const data = await cachedFetchAndAnalyze({
+    const { data } = await fetchForTool({
       timeframe_days,
       top_voted_limit,
-      mailbox_id: resolvedMailboxId,
+      include_comments,
+      mailbox_id,
+      mailbox_name,
       portal_name,
       agent_name,
       source_filter,
     });
 
     if (data.fetchFailed) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: all data sources failed to fetch.\n${data.warnings.join("\n")}`,
-          },
-        ],
-        isError: true,
-      };
+      return allSourcesFailed(data.warnings);
     }
 
     // Build lookup maps for quote extraction
@@ -1151,8 +1194,25 @@ server.registerTool("get_feature_requests", {
         "Filter to feature requests with this status (optional, case-insensitive), " +
         "e.g. 'open', 'planned', 'completed'. Omit to return all statuses."
       ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_FEATURE_REQUEST_LIMIT)
+      .optional()
+      .describe(
+        "Max feature requests to return per portal, applied after the status filter and sort " +
+        "(optional). Recommended on large portals: comments are fetched only for what's kept."
+      ),
+    sort: z
+      .enum(["votes", "recent"])
+      .optional()
+      .describe(
+        "Order before the limit is applied: 'votes' (most voted first) or 'recent' (newest " +
+        "first). Omit to keep the portal's own order."
+      ),
   },
-}, async ({ portal_name, include_comments, status }) => {
+}, async ({ portal_name, include_comments, status, limit, sort }) => {
   if (portalConfigs.length === 0) {
     const detail = portalConfigError
       ? `ProductLift config error: ${portalConfigError}`
@@ -1185,7 +1245,12 @@ server.registerTool("get_feature_requests", {
     let commentFailures = 0;
     const results = await Promise.allSettled(
       clients.map((client) =>
-        client.fetchFeatureRequests(include_comments, status || undefined)
+        client.fetchFeatureRequests({
+          includeComments: include_comments,
+          status: status || undefined,
+          limit,
+          sort,
+        })
       )
     );
     results.forEach((result, i) => {
@@ -1229,6 +1294,8 @@ server.registerTool("get_feature_requests", {
             {
               portal_filter: portal_name ?? "all",
               status_filter: status ?? "all",
+              limit_per_portal: limit ?? null,
+              sort: sort ?? null,
               total_feature_requests: formatted.length,
               fetched_at: new Date().toISOString(),
               pii_scrubbing_applied: true,

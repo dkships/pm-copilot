@@ -261,6 +261,18 @@ describe("multi-word keyword matching", () => {
   });
 });
 
+describe("feature request comments", () => {
+  const comment = (role: string, text: string) => ({ role, comment: text, created_at: null });
+
+  it("matches themes on customer comments but never on admin replies", () => {
+    const withAdmin = feature("f1", "misc idea", { comments: [comment("admin", "billing is on our roadmap")] });
+    const withCustomer = feature("f2", "misc idea", { comments: [comment("user", "billing please")] });
+    const r = analyzeFeedback([], [withAdmin, withCustomer], config);
+    const billing = r.themes.find((t) => t.theme_id === "billing");
+    expect(billing?.data_points.map((d) => d.id)).toEqual(["pl-f2"]);
+  });
+});
+
 // ── Emerging theme detection ──
 
 describe("emerging themes", () => {
