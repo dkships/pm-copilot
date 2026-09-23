@@ -616,10 +616,11 @@ const ANALYSIS_FILTERS = {
     .boolean()
     .default(false)
     .describe(
-      "Also fetch ProductLift comment text (PII-scrubbed, commenter names dropped) and use it " +
-      "for theme matching and quotes (default: false). Measured: about 40% fewer unmatched " +
-      "signals. Costs one API call per feature request that has comments; ProductLift allows " +
-      "120 calls a minute, so on large portals the call can take up to a minute."
+      "Also fetch customer comment text on feature requests (PII-scrubbed, commenter names and " +
+      "admin replies dropped) for theme matching and quotes (default: false). Expect a modest " +
+      "gain: a few extra matches per theme. Costs one API call per request with comments " +
+      "against ProductLift's 120-a-minute limit, so on large portals a call can take close " +
+      "to a minute."
     ),
 };
 
@@ -974,7 +975,7 @@ server.registerTool("generate_product_plan", {
                     "title (PII-scrubbed)",
                     "description (PII-scrubbed)",
                     "url (PII-scrubbed)",
-                    ...(include_comments ? ["comment text and commenter role (PII-scrubbed)"] : []),
+                    ...(include_comments ? ["customer comment text (PII-scrubbed; admin replies excluded)"] : []),
                     "vote count",
                     "comment count",
                     "status",
@@ -984,6 +985,7 @@ server.registerTool("generate_product_plan", {
                     ...(include_comments ? [] : ["comment text (include_comments is false)"]),
                     "voter identities",
                     "commenter names and emails",
+                    ...(include_comments ? ["admin/staff comment replies"] : []),
                   ],
                 },
                 chatbase: {

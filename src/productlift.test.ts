@@ -380,6 +380,66 @@ describe("fetchPosts parallel paging", () => {
   });
 });
 
+describe("fetchPosts paging edge cases", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const client = () =>
+    new ProductLiftClient({ name: "acme", baseUrl: "https://r.example.com", apiKey: "k" });
+
+  const postsAt = (skip: number, count: number) =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `p${skip + i}`,
+      title: "",
+      description: "",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    }));
+
+  const respond = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+  it("stops claiming new pages once one page fails", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const skip = Number(new URL(String(input)).searchParams.get("skip"));
+      if (skip === 20) {
+        return respond({ error: "boom" }, 500);
+      }
+      await new Promise((r) => setTimeout(r, 5));
+      return respond({ data: postsAt(skip, 10), hasMore: true, total: 500, skip, limit: 10 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(client().fetchPosts({ pageDelayMs: 0 })).rejects.toThrow(/500/);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(fetchMock.mock.calls.length).toBeLessThan(15);
+  });
+
+  it("does not skip posts when a short first page understates the total", async () => {
+    // 60 real posts, total reported as 21, a short first page (7) and full
+    // pages (10) after it, so the parallel pages overlap.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const skip = Number(new URL(String(input)).searchParams.get("skip"));
+        const size = skip === 0 ? 7 : 10;
+        const data = postsAt(skip, Math.max(0, Math.min(size, 60 - skip)));
+        return respond({ data, hasMore: skip + data.length < 60, total: 21, skip, limit: 10 });
+      })
+    );
+    const posts = await client().fetchPosts({ pageDelayMs: 0 });
+    expect(posts.map((p) => p.id)).toEqual(Array.from({ length: 60 }, (_, i) => `p${i}`));
+  });
+
+  it("rejects an absurd total before planning the pages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => respond({ data: postsAt(0, 10), hasMore: true, total: 1e9, skip: 0, limit: 10 }))
+    );
+    await expect(client().fetchPosts({ pageDelayMs: 0 })).rejects.toThrow(/more than 500 pages/);
+  });
+});
+
 describe("withComments concurrency", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

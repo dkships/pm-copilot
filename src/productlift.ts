@@ -99,7 +99,11 @@ export interface FetchPostsOptions {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Map over items with at most `limit` calls in flight; results keep input order. */
+/**
+ * Map over items with at most `limit` calls in flight; results keep input
+ * order. The first failure rejects, and no worker claims a new item after it,
+ * so a failed portal doesn't keep spending the rate limit.
+ */
 async function mapConcurrent<T, R>(
   items: T[],
   limit: number,
@@ -107,12 +111,18 @@ async function mapConcurrent<T, R>(
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
+  let failed = false;
 
   // Each worker claims the next unclaimed item until none are left.
   const worker = async () => {
-    while (next < items.length) {
+    while (!failed && next < items.length) {
       const index = next++;
-      results[index] = await fn(items[index] as T);
+      try {
+        results[index] = await fn(items[index] as T);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
     }
   };
 
@@ -149,7 +159,8 @@ export class ProductLiftClient {
   static sortByRecency(posts: PostSummary[], limit: number): PostSummary[] {
     // An unparseable created_at sorts last rather than poisoning the order.
     const createdMs = (p: PostSummary) => {
-      const ms = new Date(p.created_at).getTime();
+      // new Date(null) is 1970, not invalid, so check for a value first.
+      const ms = p.created_at ? new Date(p.created_at).getTime() : NaN;
       return Number.isFinite(ms) ? ms : -Infinity;
     };
     return [...posts].sort((a, b) => createdMs(b) - createdMs(a)).slice(0, limit);
@@ -228,26 +239,29 @@ export class ProductLiftClient {
     const first = await this.fetchPostsPage(0);
     const pages: PaginatedResponse<PostSummary>[] = [first];
     const pageSize = first.data.length;
+    // Offset of the last page fetched; the tail continues from it.
+    let lastSkip = 0;
 
     if (first.hasMore && pageSize > 0 && Number.isFinite(first.total)) {
-      const skips: number[] = [];
-      for (let skip = pageSize; skip < first.total; skip += pageSize) {
-        skips.push(skip);
-      }
-      if (skips.length + 1 > maxPages) {
+      // Check the cap before planning offsets, so an absurd total can't
+      // allocate a huge list first.
+      const remainingPages = Math.ceil((first.total - pageSize) / pageSize);
+      if (remainingPages + 1 > maxPages) {
         throw this.tooManyPages(maxPages);
       }
+      const skips = Array.from({ length: Math.max(0, remainingPages) }, (_, i) => (i + 1) * pageSize);
       pages.push(
         ...(await mapConcurrent(skips, REQUEST_CONCURRENCY, async (skip) => {
           await sleep(pageDelayMs);
           return this.fetchPostsPage(skip);
         }))
       );
+      lastSkip = skips[skips.length - 1] ?? 0;
     }
 
     // Sequential tail: covers a missing total, and posts added after page 1.
     let last = pages[pages.length - 1] ?? first;
-    let skip = pages.reduce((sum, p) => sum + p.data.length, 0);
+    let skip = lastSkip + last.data.length;
     while (last.hasMore && last.data.length > 0) {
       if (pages.length >= maxPages) {
         throw this.tooManyPages(maxPages);

@@ -202,10 +202,12 @@ function deflectedToDataPoint(conv: FormattedDeflectedConversation): DataPoint {
 }
 
 function featureRequestToDataPoint(req: FormattedFeatureRequest): DataPoint {
+  // Admin replies are excluded by design: staff wording ("added to the
+  // roadmap") is not customer signal and must not become a theme or n-gram.
   const textParts = [
     req.title,
     req.description,
-    ...req.comments.map((c) => c.comment),
+    ...req.comments.filter((c) => c.role !== "admin").map((c) => c.comment),
   ];
   return {
     id: `pl-${req.id}`,
