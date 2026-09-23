@@ -223,42 +223,25 @@ function featureRequestToDataPoint(req: FormattedFeatureRequest): DataPoint {
 
 // ── Theme matching ──
 
-// Keywords compiled once per analysis run instead of per data point.
-// Multi-word keywords match as substrings; single-word keywords match on a word
-// boundary with an optional regular plural suffix (escaped, case-insensitive, no
-// `g` flag — a shared `g` regex is stateful).
+// Keywords compiled once per analysis run instead of per data point. Every
+// keyword, single- or multi-word, matches on word boundaries with an optional
+// regular plural suffix (escaped, case-insensitive, no `g` flag — a shared `g`
+// regex is stateful). Multi-word keywords used to match as raw substrings, so
+// "sign in" fired on "design in" and "500 error" on "1500 error".
 //
 // The plural suffix matters more than it looks. Without it `plan` misses "plans"
 // and `tier` misses "tiers", and the config listed plurals only where someone
 // happened to think of it ("booking"/"bookings" both present, "tier" alone).
 // Irregular plurals still need listing explicitly — `(?:e?s)?` does not cover
 // entry/entries.
-interface CompiledKeywords {
-  substrings: string[];
-  wordRegexes: RegExp[];
-}
+type CompiledKeywords = RegExp[];
 
 function compileKeywords(keywords: string[]): CompiledKeywords {
-  const substrings: string[] = [];
-  const wordRegexes: RegExp[] = [];
-  for (const kw of keywords) {
-    if (kw.includes(" ")) {
-      substrings.push(kw.toLowerCase());
-    } else {
-      wordRegexes.push(new RegExp(`\\b${escapeRegex(kw)}(?:e?s)?\\b`, "i"));
-    }
-  }
-  return { substrings, wordRegexes };
+  return keywords.map((kw) => new RegExp(`\\b${escapeRegex(kw)}(?:e?s)?\\b`, "i"));
 }
 
 function matchesCompiled(text: string, compiled: CompiledKeywords): boolean {
-  for (const s of compiled.substrings) {
-    if (text.includes(s)) return true;
-  }
-  for (const r of compiled.wordRegexes) {
-    if (r.test(text)) return true;
-  }
-  return false;
+  return compiled.some((r) => r.test(text));
 }
 
 export function matchesTheme(text: string, keywords: string[]): boolean {
@@ -270,6 +253,9 @@ function escapeRegex(str: string): string {
 }
 
 // ── Scoring ──
+
+const RECENCY_MAX_BOOST = 30;
+const RECENCY_HALF_LIFE_DAYS = 7;
 
 const SEVERITY_TAG_BOOST: Record<string, number> = {
   bug: 20,
@@ -300,17 +286,16 @@ function computeSeverityScore(points: DataPoint[]): number {
     const ageDays = Number.isFinite(createdMs)
       ? Math.max(0, now - createdMs) / (1000 * 60 * 60 * 24)
       : Infinity;
-    const recencyBoost = 30 * Math.exp(-ageDays / 7);
+    const recencyBoost = RECENCY_MAX_BOOST * Math.pow(0.5, ageDays / RECENCY_HALF_LIFE_DAYS);
     pointScore += recencyBoost;
 
-    // Tag boost
+    // Tag boost: one per point, the highest matching tag, so the score
+    // doesn't depend on the order HelpScout returns tags in.
+    let tagBoost = 0;
     for (const tag of p.metadata.tags ?? []) {
-      const boost = SEVERITY_TAG_BOOST[tag.toLowerCase()];
-      if (boost) {
-        pointScore += boost;
-        break; // only apply one tag boost per point
-      }
+      tagBoost = Math.max(tagBoost, SEVERITY_TAG_BOOST[tag.toLowerCase()] ?? 0);
     }
+    pointScore += tagBoost;
 
     totalScore += pointScore;
   }

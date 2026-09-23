@@ -6,7 +6,7 @@
  * reference it when using generate_product_plan.
  */
 
-export const METHODOLOGY_VERSION = "2.1";
+export const METHODOLOGY_VERSION = "2.2";
 
 export const METHODOLOGY_CONTENT = `# David Kelly's Product Planning Framework v${METHODOLOGY_VERSION}
 
