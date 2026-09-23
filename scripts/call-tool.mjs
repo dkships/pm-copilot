@@ -40,7 +40,14 @@ try {
       .join("\n");
     console.error("[note] output may include source names/URLs — redact before sharing");
     if (result.isError) console.error("[error] tool returned isError");
-    console.log(text);
+    // Tools return compact JSON to save LLM tokens; pretty-print for humans.
+    let pretty = text;
+    try {
+      pretty = JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      // Not JSON (markdown plan, error text) — print as-is.
+    }
+    console.log(pretty);
     console.error(`[size] ${Buffer.byteLength(text, "utf8")} bytes`);
   }
 } finally {

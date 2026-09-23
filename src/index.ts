@@ -1,9 +1,16 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
+// The repo root, one level above dist/. .env and package.json are read from
+// here, not the working directory: Claude Desktop launches the server from
+// elsewhere, and a cwd-relative .env was silently never found.
+const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Make the project .env authoritative: override any stale value already exported
 // in the shell/parent environment (e.g. an old PRODUCTLIFT_PORTALS). Without this,
 // dotenv leaves pre-set vars untouched and edits to .env appear to have no effect.
-loadEnv({ override: true });
+loadEnv({ path: resolve(PROJECT_ROOT, ".env"), override: true });
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -15,7 +22,7 @@ import {
   ProductLiftClient,
   parsePortalConfigs,
 } from "./productlift.js";
-import type { FeatureRequest, Comment, PortalConfig } from "./productlift.js";
+import type { FeatureRequest, PortalConfig } from "./productlift.js";
 import {
   ChatbaseClient,
   parseAgentConfigs,
@@ -45,6 +52,18 @@ import {
   capTitles,
 } from "./format.js";
 import { METHODOLOGY_CONTENT, METHODOLOGY_VERSION } from "./methodology.js";
+
+const { version: SERVER_VERSION } = createRequire(import.meta.url)(
+  resolve(PROJECT_ROOT, "package.json")
+) as { version: string };
+
+// Every tool only reads from external APIs; clients can treat them as safe.
+const READ_ONLY_TOOL = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+} as const;
 
 // HelpScout setup
 const HELPSCOUT_APP_ID = process.env.HELPSCOUT_APP_ID;
@@ -106,7 +125,7 @@ function describeAgents(): string {
 
 const server = new McpServer({
   name: "pm-copilot",
-  version: "1.4.1",
+  version: SERVER_VERSION,
 });
 
 // ── Resources ──
@@ -154,12 +173,16 @@ interface FetchedData {
   // True when every configured source failed — callers should return an error
   // instead of presenting an empty analysis as a successful result.
   fetchFailed: boolean;
+  // True when any source or portal/agent failed. Such a result is returned
+  // but not cached, so a transient outage doesn't stick for the cache TTL.
+  partialFailure: boolean;
+  fetchedAt: string;
 }
 
 function filterClientsByPortal(portalName: string | undefined): ProductLiftClient[] {
   if (!portalName) return productliftClients;
   return productliftClients.filter(
-    (_, i) => portalConfigs[i]?.name.toLowerCase() === portalName.toLowerCase()
+    (c) => c.portalName.toLowerCase() === portalName.toLowerCase()
   );
 }
 
@@ -196,15 +219,25 @@ function filterClientsByAgent(agentName: string | undefined): ChatbaseClient[] {
   );
 }
 
+interface SourceLeg {
+  warnings: string[];
+  // Clients (portals or agents) that were queried, and how many of them failed.
+  // Informational warnings — an unknown filter value — are not failures.
+  attempted: number;
+  failed: number;
+}
+
 async function fetchChatbase(
   params: FetchParams,
   piiSink: Set<string>
-): Promise<{ deflected: FormattedDeflectedConversation[]; warnings: string[] }> {
+): Promise<SourceLeg & { deflected: FormattedDeflectedConversation[] }> {
   if (chatbaseClients.length === 0) {
     // A filter with nothing to filter would otherwise be silently ignored while
     // the response metadata implies it was applied.
     return {
       deflected: [],
+      attempted: 0,
+      failed: 0,
       warnings: params.source_filter
         ? [
             `source_filter "${params.source_filter}" was ignored: no Chatbase agents are configured.`,
@@ -218,12 +251,14 @@ async function fetchChatbase(
     if (params.agent_name) {
       return {
         deflected: [],
+        attempted: 0,
+        failed: 0,
         warnings: [
           `No Chatbase agent named "${params.agent_name}". Configured: ${describeAgents()}`,
         ],
       };
     }
-    return { deflected: [], warnings: [] };
+    return { deflected: [], attempted: 0, failed: 0, warnings: [] };
   }
 
   const warnings: string[] = [];
@@ -256,10 +291,12 @@ async function fetchChatbase(
   );
 
   const deflected: FormattedDeflectedConversation[] = [];
+  let failed = 0;
   results.forEach((result, i) => {
     if (result.status === "fulfilled") {
       deflected.push(...result.value);
     } else {
+      failed++;
       const msg =
         result.reason instanceof Error ? result.reason.message : String(result.reason);
       warnings.push(
@@ -268,18 +305,37 @@ async function fetchChatbase(
     }
   });
 
-  return { deflected, warnings };
+  return { deflected, warnings, attempted: clients.length, failed };
 }
 
 async function fetchProductLift(
   params: FetchParams,
-  piiSink: Set<string>,
-  includeComments = false
-): Promise<{ requests: FormattedFeatureRequest[]; warnings: string[] }> {
-  if (portalConfigs.length === 0) return { requests: [], warnings: [] };
+  piiSink: Set<string>
+): Promise<SourceLeg & { requests: FormattedFeatureRequest[] }> {
+  if (portalConfigs.length === 0) {
+    // Same reasoning as the Chatbase leg: don't let a filter look applied.
+    return {
+      requests: [],
+      attempted: 0,
+      failed: 0,
+      warnings: params.portal_name
+        ? [`portal_name "${params.portal_name}" was ignored: no ProductLift portals are configured.`]
+        : [],
+    };
+  }
 
   const clients = filterClientsByPortal(params.portal_name);
-  if (clients.length === 0) return { requests: [], warnings: [] };
+  if (clients.length === 0) {
+    // A typo'd portal name would otherwise read as "no feature requests".
+    return {
+      requests: [],
+      attempted: 0,
+      failed: 0,
+      warnings: [
+        `No ProductLift portal named "${params.portal_name}". Configured: ${describePortals()}`,
+      ],
+    };
+  }
 
   // Fetch portals in parallel, each isolated — one failing portal becomes a
   // warning instead of dropping every portal's data
@@ -297,38 +353,21 @@ async function fetchProductLift(
         return true;
       });
 
-      const formatted: FormattedFeatureRequest[] = [];
-      for (const post of combined) {
-        let comments: Comment[] = [];
-        if (includeComments) {
-          try {
-            comments = await client.fetchComments(post.id);
-          } catch {
-            // skip if comments unavailable
-          }
-        }
-
-        formatted.push(
-          formatFeatureRequest(
-            {
-              ...post,
-              comments,
-              portal: client.portalName,
-            },
-            piiSink
-          )
-        );
-      }
-      return formatted;
+      // Comment text is not fetched on the analysis path (see preview_only).
+      return combined.map((post) =>
+        formatFeatureRequest({ ...post, comments: [], portal: client.portalName }, piiSink)
+      );
     })
   );
 
   const requests: FormattedFeatureRequest[] = [];
   const warnings: string[] = [];
+  let failed = 0;
   results.forEach((result, i) => {
     if (result.status === "fulfilled") {
       requests.push(...result.value);
     } else {
+      failed++;
       const msg =
         result.reason instanceof Error ? result.reason.message : String(result.reason);
       warnings.push(
@@ -337,7 +376,7 @@ async function fetchProductLift(
     }
   });
 
-  return { requests, warnings };
+  return { requests, warnings, attempted: clients.length, failed };
 }
 
 // ── Response cache ──
@@ -371,8 +410,9 @@ async function cachedFetchAndAnalyze(params: FetchParams): Promise<FetchedData> 
   console.error(`[pm-copilot] Cache miss (key=${key}), fetching fresh data...`);
   const data = await fetchAndAnalyze(params);
 
-  // Never cache a total fetch failure — a transient outage shouldn't stick for 5 minutes
-  if (!data.fetchFailed) {
+  // Never cache a failed or partial fetch — a transient outage in one source
+  // shouldn't stick for 5 minutes.
+  if (!data.fetchFailed && !data.partialFailure) {
     fetchCache.set(key, { data, timestamp: Date.now() });
   }
 
@@ -413,11 +453,13 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
 
   let featureRequests: FormattedFeatureRequest[] = [];
   let productliftFailed = false;
+  let productliftPartial = false;
   if (plResult.status === "fulfilled") {
-    featureRequests = plResult.value.requests;
-    warnings.push(...plResult.value.warnings);
-    productliftFailed =
-      featureRequests.length === 0 && plResult.value.warnings.length > 0;
+    const leg = plResult.value;
+    featureRequests = leg.requests;
+    warnings.push(...leg.warnings);
+    productliftFailed = leg.attempted > 0 && leg.failed === leg.attempted;
+    productliftPartial = leg.failed > 0;
   } else {
     productliftFailed = true;
     const msg = plResult.reason instanceof Error
@@ -429,10 +471,13 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
 
   let deflected: FormattedDeflectedConversation[] = [];
   let chatbaseFailed = false;
+  let chatbasePartial = false;
   if (cbResult.status === "fulfilled") {
-    deflected = cbResult.value.deflected;
-    warnings.push(...cbResult.value.warnings);
-    chatbaseFailed = deflected.length === 0 && cbResult.value.warnings.length > 0;
+    const leg = cbResult.value;
+    deflected = leg.deflected;
+    warnings.push(...leg.warnings);
+    chatbaseFailed = leg.attempted > 0 && leg.failed === leg.attempted;
+    chatbasePartial = leg.failed > 0;
   } else {
     chatbaseFailed = true;
     const msg = cbResult.reason instanceof Error
@@ -449,6 +494,12 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
     hsResult.status === "rejected" &&
     (portalConfigs.length === 0 || productliftFailed) &&
     (chatbaseClients.length === 0 || chatbaseFailed);
+  const partialFailure =
+    hsResult.status === "rejected" ||
+    plResult.status === "rejected" ||
+    cbResult.status === "rejected" ||
+    productliftPartial ||
+    chatbasePartial;
 
   const config = loadThemesConfig();
   const analysis = analyzeFeedback(conversations, featureRequests, config, deflected);
@@ -476,6 +527,8 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
     dataSources,
     warnings,
     fetchFailed,
+    partialFailure,
+    fetchedAt: new Date().toISOString(),
   };
 }
 
@@ -483,6 +536,7 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
 
 server.registerTool("synthesize_feedback", {
   title: "Synthesize Customer Feedback",
+  annotations: READ_ONLY_TOOL,
   description:
     "Cross-reference support tickets (HelpScout), feature requests (ProductLift) and AI " +
     "support agent conversations (Chatbase) to find convergent signals. Returns theme-matched " +
@@ -597,14 +651,13 @@ server.registerTool("synthesize_feedback", {
               // when unconfigured, fetchChatbase warns and this reads null.
               source_filter: chatbaseClients.length > 0 ? (source_filter ?? "all") : null,
               top_voted_limit,
-              fetched_at: new Date().toISOString(),
+              // When the data was fetched — up to the cache TTL old on a hit.
+              fetched_at: data.fetchedAt,
               pii_scrubbing_applied: true,
               pii_categories_redacted: data.piiCategoriesRedacted,
               ...(data.warnings.length > 0 && { warnings: data.warnings }),
               analysis: trimmedAnalysis,
             },
-            null,
-            2
           ),
         },
       ],
@@ -746,6 +799,7 @@ function renderPlanMarkdown(args: {
 
 server.registerTool("generate_product_plan", {
   title: "Generate Product Plan",
+  annotations: READ_ONLY_TOOL,
   description:
     "Build a prioritized product plan by cross-referencing HelpScout support tickets, " +
     "ProductLift feature requests, and Chatbase AI support agent conversations. Optionally " +
@@ -898,9 +952,7 @@ server.registerTool("generate_product_plan", {
                 kpi_context_note: kpi_context
                   ? "KPI context will be included verbatim in the plan output for Claude to reference."
                   : "No KPI context provided. Plan will be based on customer signals only.",
-              },
-              null,
-              2
+              }
             ),
           },
         ],
@@ -1051,7 +1103,7 @@ server.registerTool("generate_product_plan", {
             emerging: emergingSummary,
             kpiContext: kpi_context,
           })
-        : JSON.stringify(plan, null, 2);
+        : JSON.stringify(plan);
 
     return {
       content: [
@@ -1068,6 +1120,7 @@ server.registerTool("generate_product_plan", {
 
 server.registerTool("get_feature_requests", {
   title: "Get Feature Requests",
+  annotations: READ_ONLY_TOOL,
   description:
     "Pull feature requests from ProductLift portals. " +
     "Returns posts with vote counts, statuses, categories, and comments. " +
@@ -1122,6 +1175,7 @@ server.registerTool("get_feature_requests", {
     // a warning instead of dropping every portal's data
     const allRequests: FeatureRequest[] = [];
     const warnings: string[] = [];
+    let commentFailures = 0;
     const results = await Promise.allSettled(
       clients.map((client) =>
         client.fetchFeatureRequests(include_comments, status || undefined)
@@ -1129,7 +1183,8 @@ server.registerTool("get_feature_requests", {
     );
     results.forEach((result, i) => {
       if (result.status === "fulfilled") {
-        allRequests.push(...result.value);
+        allRequests.push(...result.value.requests);
+        commentFailures += result.value.commentFailures;
       } else {
         const reason = result.reason;
         const msg = reason instanceof Error ? reason.message : String(reason);
@@ -1139,6 +1194,13 @@ server.registerTool("get_feature_requests", {
         );
       }
     });
+
+    if (commentFailures > 0) {
+      warnings.push(
+        `Comments could not be fetched for ${commentFailures} feature request(s); ` +
+          "they are returned without comments."
+      );
+    }
 
     if (allRequests.length === 0 && warnings.length > 0) {
       return {
@@ -1167,8 +1229,6 @@ server.registerTool("get_feature_requests", {
               ...(warnings.length > 0 && { warnings }),
               feature_requests: formatted,
             },
-            null,
-            2
           ),
         },
       ],
@@ -1180,6 +1240,7 @@ server.registerTool("get_feature_requests", {
 
 server.registerTool("list_sources", {
   title: "List Configured Sources",
+  annotations: READ_ONLY_TOOL,
   description:
     "List the data sources this server is connected to: HelpScout mailboxes (id + name), " +
     "ProductLift portals (name + url), and Chatbase agents (name), plus the conversation " +
@@ -1235,8 +1296,6 @@ server.registerTool("list_sources", {
               }),
               ...(warnings.length > 0 && { warnings }),
             },
-            null,
-            2
           ),
         },
       ],
