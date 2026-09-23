@@ -541,6 +541,95 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
 
 // ── Tools ──
 
+// Filters shared by synthesize_feedback and generate_product_plan.
+const ANALYSIS_FILTERS = {
+  timeframe_days: z
+    .number()
+    .int()
+    .min(1)
+    .max(90)
+    .default(30)
+    .describe("Number of days to look back (default: 30, max: 90)"),
+  top_voted_limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .default(50)
+    .describe(
+      "Top-voted feature requests to include per portal (default: 50). " +
+      "Recent requests within the timeframe are always included as well."
+    ),
+  mailbox_id: z
+    .string()
+    .optional()
+    .describe("HelpScout mailbox ID to filter by (optional). Prefer mailbox_name."),
+  mailbox_name: z
+    .string()
+    .optional()
+    .describe(
+      "HelpScout mailbox name to filter by (optional, case-insensitive). " +
+      "Resolved to an ID automatically — run list_sources to see available names."
+    ),
+  portal_name: z
+    .string()
+    .optional()
+    .describe("ProductLift portal name to filter by (optional)"),
+  agent_name: z
+    .string()
+    .optional()
+    .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
+  source_filter: z
+    .string()
+    .optional()
+    .describe(
+      "Chatbase conversation source(s) to filter by (optional), comma-separated for " +
+      "multiple. Case-insensitive. Examples: 'Widget or Iframe', 'WhatsApp,API'. " +
+      "Run list_sources to see available sources."
+    ),
+};
+
+interface AnalysisFilterArgs {
+  timeframe_days: number;
+  top_voted_limit: number;
+  mailbox_id?: string;
+  mailbox_name?: string;
+  portal_name?: string;
+  agent_name?: string;
+  source_filter?: string;
+}
+
+/**
+ * Resolve the mailbox name and run the cached fetch + analysis. The name is
+ * resolved here, at the handler boundary, so the cache key only ever sees an ID.
+ */
+async function fetchForTool(
+  args: AnalysisFilterArgs
+): Promise<{ data: FetchedData; resolvedMailboxId: string | undefined }> {
+  const resolvedMailboxId = await resolveMailboxId(args.mailbox_name, args.mailbox_id);
+  const data = await cachedFetchAndAnalyze({
+    timeframe_days: args.timeframe_days,
+    top_voted_limit: args.top_voted_limit,
+    mailbox_id: resolvedMailboxId,
+    portal_name: args.portal_name,
+    agent_name: args.agent_name,
+    source_filter: args.source_filter,
+  });
+  return { data, resolvedMailboxId };
+}
+
+function allSourcesFailed(warnings: string[]) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `Error: all data sources failed to fetch.\n${warnings.join("\n")}`,
+      },
+    ],
+    isError: true,
+  };
+}
+
 server.registerTool("synthesize_feedback", {
   title: "Synthesize Customer Feedback",
   annotations: READ_ONLY_TOOL,
@@ -555,50 +644,7 @@ server.registerTool("synthesize_feedback", {
     "tool — use generate_product_plan for a ranked plan with KPI context. " +
     `Configured portals: ${describePortals()}. Configured Chatbase agents: ${describeAgents()}`,
   inputSchema: {
-    timeframe_days: z
-      .number()
-      .int()
-      .min(1)
-      .max(90)
-      .default(30)
-      .describe("Number of days to look back (default: 30, max: 90)"),
-    top_voted_limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(200)
-      .default(50)
-      .describe(
-        "Top-voted feature requests to include per portal (default: 50). " +
-        "Recent requests within the timeframe are always included as well."
-      ),
-    mailbox_id: z
-      .string()
-      .optional()
-      .describe("HelpScout mailbox ID to filter by (optional). Prefer mailbox_name."),
-    mailbox_name: z
-      .string()
-      .optional()
-      .describe(
-        "HelpScout mailbox name to filter by (optional, case-insensitive). " +
-        "Resolved to an ID automatically — run list_sources to see available names."
-      ),
-    portal_name: z
-      .string()
-      .optional()
-      .describe("ProductLift portal name to filter by (optional)"),
-    agent_name: z
-      .string()
-      .optional()
-      .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
-    source_filter: z
-      .string()
-      .optional()
-      .describe(
-        "Chatbase conversation source(s) to filter by (optional), comma-separated for " +
-        "multiple. Case-insensitive. Examples: 'Widget or Iframe', 'WhatsApp,API'. " +
-        "Run list_sources to see available sources."
-      ),
+    ...ANALYSIS_FILTERS,
     detail_level: z
       .enum(["summary", "standard", "full"])
       .default("summary")
@@ -611,27 +657,18 @@ server.registerTool("synthesize_feedback", {
   },
 }, async ({ timeframe_days, top_voted_limit, mailbox_id, mailbox_name, portal_name, agent_name, source_filter, detail_level }) => {
   try {
-    // Resolve name → ID at the handler boundary; the cache key only ever sees an ID.
-    const resolvedMailboxId = await resolveMailboxId(mailbox_name, mailbox_id);
-    const data = await cachedFetchAndAnalyze({
+    const { data, resolvedMailboxId } = await fetchForTool({
       timeframe_days,
       top_voted_limit,
-      mailbox_id: resolvedMailboxId,
+      mailbox_id,
+      mailbox_name,
       portal_name,
       agent_name,
       source_filter,
     });
 
     if (data.fetchFailed) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: all data sources failed to fetch.\n${data.warnings.join("\n")}`,
-          },
-        ],
-        isError: true,
-      };
+      return allSourcesFailed(data.warnings);
     }
 
     const trimmedAnalysis = trimAnalysisForDetail(
@@ -816,50 +853,7 @@ server.registerTool("generate_product_plan", {
     "Use synthesize_feedback instead for the underlying theme analysis without plan framing. " +
     `Configured portals: ${describePortals()}. Configured Chatbase agents: ${describeAgents()}`,
   inputSchema: {
-    timeframe_days: z
-      .number()
-      .int()
-      .min(1)
-      .max(90)
-      .default(30)
-      .describe("Number of days to look back (default: 30, max: 90)"),
-    top_voted_limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(200)
-      .default(50)
-      .describe(
-        "Top-voted feature requests to include per portal (default: 50). " +
-        "Recent requests within the timeframe are always included as well."
-      ),
-    mailbox_id: z
-      .string()
-      .optional()
-      .describe("HelpScout mailbox ID to filter by (optional). Prefer mailbox_name."),
-    mailbox_name: z
-      .string()
-      .optional()
-      .describe(
-        "HelpScout mailbox name to filter by (optional, case-insensitive). " +
-        "Resolved to an ID automatically — run list_sources to see available names."
-      ),
-    portal_name: z
-      .string()
-      .optional()
-      .describe("ProductLift portal name to filter by (optional)"),
-    agent_name: z
-      .string()
-      .optional()
-      .describe("Chatbase agent name to filter by (optional) — run list_sources to see names"),
-    source_filter: z
-      .string()
-      .optional()
-      .describe(
-        "Chatbase conversation source(s) to filter by (optional), comma-separated for " +
-        "multiple. Case-insensitive. Examples: 'Widget or Iframe', 'WhatsApp,API'. " +
-        "Run list_sources to see available sources."
-      ),
+    ...ANALYSIS_FILTERS,
     kpi_context: z
       .string()
       .optional()
@@ -967,27 +961,18 @@ server.registerTool("generate_product_plan", {
     }
 
     // Full execution: fetch, analyze, build plan.
-    // Resolve name → ID at the handler boundary; the cache key only ever sees an ID.
-    const resolvedMailboxId = await resolveMailboxId(mailbox_name, mailbox_id);
-    const data = await cachedFetchAndAnalyze({
+    const { data } = await fetchForTool({
       timeframe_days,
       top_voted_limit,
-      mailbox_id: resolvedMailboxId,
+      mailbox_id,
+      mailbox_name,
       portal_name,
       agent_name,
       source_filter,
     });
 
     if (data.fetchFailed) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error: all data sources failed to fetch.\n${data.warnings.join("\n")}`,
-          },
-        ],
-        isError: true,
-      };
+      return allSourcesFailed(data.warnings);
     }
 
     // Build lookup maps for quote extraction
