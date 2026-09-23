@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Changed
+
+- HelpScout is optional. The server runs with any one of HelpScout, ProductLift or Chatbase
+  configured, and exits only when none is. Without HelpScout there are no tickets, so themes get
+  no severity score and no convergence boost. Setting one HelpScout variable without the other is
+  a config error, reported without echoing the value. A mailbox filter given without HelpScout
+  warns instead of being silently ignored. `list_sources` adds `helpscout_configured`. The
+  `.env.example` HelpScout lines are now commented out, so copying it doesn't configure fake
+  credentials.
+
 ### Fixed
 
 - A HelpScout 403 after a successful token request now says what it usually means: the user who

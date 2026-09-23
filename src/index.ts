@@ -17,8 +17,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import {
   HelpScoutClient,
+  parseHelpScoutConfig,
   type Mailbox,
 } from "./helpscout.js";
+import { allConfiguredFailed, type SourceStatus } from "./source-status.js";
 import {
   ProductLiftClient,
   parsePortalConfigs,
@@ -71,18 +73,25 @@ const READ_ONLY_TOOL = {
   openWorldHint: true,
 } as const;
 
-// HelpScout setup
-const HELPSCOUT_APP_ID = process.env.HELPSCOUT_APP_ID;
-const HELPSCOUT_APP_SECRET = process.env.HELPSCOUT_APP_SECRET;
-
-if (!HELPSCOUT_APP_ID || !HELPSCOUT_APP_SECRET) {
-  console.error(
-    "Missing HELPSCOUT_APP_ID or HELPSCOUT_APP_SECRET in environment"
-  );
-  process.exit(1);
+// HelpScout setup — optional, like the other sources. Without it there are no
+// support tickets, so no severity scores and no convergence boost.
+let helpscout: HelpScoutClient | null = null;
+let helpscoutConfigError: string | undefined;
+try {
+  const config = parseHelpScoutConfig();
+  if (config) {
+    helpscout = new HelpScoutClient(config.appId, config.appSecret);
+  }
+} catch (error) {
+  helpscoutConfigError = error instanceof Error ? error.message : String(error);
+  console.error(`[pm-copilot] HelpScout config error: ${helpscoutConfigError}`);
 }
 
-const helpscout = new HelpScoutClient(HELPSCOUT_APP_ID, HELPSCOUT_APP_SECRET);
+function describeHelpScout(): string {
+  if (helpscoutConfigError) return `none (config error: ${helpscoutConfigError})`;
+  if (!helpscout) return "none (set HELPSCOUT_APP_ID and HELPSCOUT_APP_SECRET in .env)";
+  return "configured";
+}
 
 // ProductLift setup — a bad portal config degrades to zero portals instead of
 // killing the HelpScout tools with it. The error is surfaced in tool
@@ -127,6 +136,15 @@ function describeAgents(): string {
     return "none (set CHATBASE_AGENTS or CHATBASE_AGENT_ID in .env)";
   }
   return agentConfigs.map((a) => a.name).join(", ");
+}
+
+// At least one source has to work, or every tool call would fail.
+if (!helpscout && productliftClients.length === 0 && chatbaseClients.length === 0) {
+  console.error(
+    "[pm-copilot] No data sources configured. Set HelpScout, ProductLift or Chatbase " +
+      "credentials in .env (see .env.example)."
+  );
+  process.exit(1);
 }
 
 const server = new McpServer({
@@ -205,6 +223,8 @@ async function resolveMailboxId(
 ): Promise<string | undefined> {
   if (mailboxId) return mailboxId;
   if (!mailboxName) return undefined;
+  // Without HelpScout there is nothing to resolve against; fetchForTool warns.
+  if (!helpscout) return undefined;
 
   const mailboxes = await helpscout.fetchMailboxes();
   const match = mailboxes.find(
@@ -466,11 +486,13 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
   // Fetch every source independently — one failing doesn't block the others
   const [hsResult, plResult, cbResult] = await Promise.allSettled([
     helpscout
-      .fetchConversations({
-        timeframeDays: params.timeframe_days,
-        mailboxId: params.mailbox_id,
-      })
-      .then((convs) => convs.map((c) => formatConversation(c, piiCategories))),
+      ? helpscout
+          .fetchConversations({
+            timeframeDays: params.timeframe_days,
+            mailboxId: params.mailbox_id,
+          })
+          .then((convs) => convs.map((c) => formatConversation(c, piiCategories)))
+      : Promise.resolve([]),
     fetchProductLift(params, piiCategories),
     fetchChatbase(params, piiCategories),
   ]);
@@ -522,13 +544,16 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
     console.error(`[pm-copilot] Chatbase error: ${msg}`);
   }
 
-  // Total failure = HelpScout failed AND every other configured source failed or
-  // isn't configured. An unconfigured ProductLift or Chatbase alone is a
-  // legitimate HelpScout-only setup.
-  const fetchFailed =
-    hsResult.status === "rejected" &&
-    (portalConfigs.length === 0 || productliftFailed) &&
-    (chatbaseClients.length === 0 || chatbaseFailed);
+  // Total failure = every configured source failed. Any source may be
+  // unconfigured: HelpScout-only, ProductLift-only and Chatbase-only setups are
+  // all legitimate.
+  const statusOf = (configured: boolean, failed: boolean): SourceStatus =>
+    !configured ? "unconfigured" : failed ? "failed" : "ok";
+  const fetchFailed = allConfiguredFailed([
+    statusOf(helpscout !== null, hsResult.status === "rejected"),
+    statusOf(portalConfigs.length > 0, productliftFailed),
+    statusOf(chatbaseClients.length > 0, chatbaseFailed),
+  ]);
   const partialFailure =
     hsResult.status === "rejected" ||
     plResult.status === "rejected" ||
@@ -646,7 +671,7 @@ async function fetchForTool(
   args: AnalysisFilterArgs
 ): Promise<{ data: FetchedData; resolvedMailboxId: string | undefined }> {
   const resolvedMailboxId = await resolveMailboxId(args.mailbox_name, args.mailbox_id);
-  const data = await cachedFetchAndAnalyze({
+  const cached = await cachedFetchAndAnalyze({
     timeframe_days: args.timeframe_days,
     top_voted_limit: args.top_voted_limit,
     include_comments: args.include_comments,
@@ -655,7 +680,15 @@ async function fetchForTool(
     agent_name: args.agent_name,
     source_filter: args.source_filter,
   });
-  return { data, resolvedMailboxId };
+
+  // Same reasoning as portal_name and agent_name: don't let a filter look
+  // applied. Warn on a copy so the cached entry is never mutated.
+  const mailboxFilter = args.mailbox_name ?? args.mailbox_id;
+  if (helpscout || !mailboxFilter) {
+    return { data: cached, resolvedMailboxId };
+  }
+  const warning = `Mailbox filter "${mailboxFilter}" was ignored: HelpScout is not configured.`;
+  return { data: { ...cached, warnings: [...cached.warnings, warning] }, resolvedMailboxId };
 }
 
 function allSourcesFailed(warnings: string[]) {
@@ -682,7 +715,8 @@ server.registerTool("synthesize_feedback", {
     "Scoring follows the pm-copilot://methodology resource; scores are normalized " +
     "within a call and not comparable across calls. This is the lower-level analysis " +
     "tool — use generate_product_plan for a ranked plan with KPI context. " +
-    `Configured portals: ${describePortals()}. Configured Chatbase agents: ${describeAgents()}`,
+    `HelpScout: ${describeHelpScout()}. Configured portals: ${describePortals()}. ` +
+    `Configured Chatbase agents: ${describeAgents()}`,
   inputSchema: {
     ...ANALYSIS_FILTERS,
     detail_level: z
@@ -893,7 +927,8 @@ server.registerTool("generate_product_plan", {
     "inform prioritization. References the pm-copilot://methodology resource for planning " +
     "framework. Returns top priorities with evidence, customer quotes, and recommended actions. " +
     "Use synthesize_feedback instead for the underlying theme analysis without plan framing. " +
-    `Configured portals: ${describePortals()}. Configured Chatbase agents: ${describeAgents()}`,
+    `HelpScout: ${describeHelpScout()}. Configured portals: ${describePortals()}. ` +
+    `Configured Chatbase agents: ${describeAgents()}`,
   inputSchema: {
     ...ANALYSIS_FILTERS,
     kpi_context: z
@@ -938,7 +973,8 @@ server.registerTool("generate_product_plan", {
   try {
     // Preview mode: show what would be sent without fetching
     if (preview_only) {
-      const previewSources = ["helpscout_tickets"];
+      const previewSources: string[] = [];
+      if (helpscout) previewSources.push("helpscout_tickets");
       if (portalConfigs.length > 0) previewSources.push("productlift_votes");
       if (chatbaseClients.length > 0) previewSources.push("chatbase_conversations");
 
@@ -960,7 +996,9 @@ server.registerTool("generate_product_plan", {
                 description: "This is a preview of what data would be fetched and sent to Claude.",
                 data_sources: previewSources,
                 helpscout: {
-                  will_fetch: "support conversation summaries (subject + preview, not full message bodies)",
+                  will_fetch: helpscout
+                    ? "support conversation summaries (subject + preview, not full message bodies)"
+                    : "SKIPPED (not configured)",
                   timeframe_days,
                   mailbox_filter: mailbox_name ?? mailbox_id ?? "all",
                   fields_sent: ["subject (PII-scrubbed)", "preview snippet (PII-scrubbed)", "tags", "status", "created/closed timestamps", "thread count"],
@@ -1439,6 +1477,9 @@ server.registerTool("list_sources", {
 
     let helpscout_mailboxes: Mailbox[] = [];
     const warnings: string[] = [];
+    if (helpscoutConfigError) {
+      warnings.push(`HelpScout config error: ${helpscoutConfigError}`);
+    }
     if (portalConfigError) {
       warnings.push(`ProductLift config error: ${portalConfigError}`);
     }
@@ -1446,7 +1487,7 @@ server.registerTool("list_sources", {
       warnings.push(`Chatbase config error: ${agentConfigError}`);
     }
     try {
-      helpscout_mailboxes = await helpscout.fetchMailboxes();
+      helpscout_mailboxes = helpscout ? await helpscout.fetchMailboxes() : [];
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       warnings.push(scrubPii(`HelpScout mailbox fetch failed: ${msg}`).text);
@@ -1460,6 +1501,7 @@ server.registerTool("list_sources", {
           text: JSON.stringify(
             {
               fetched_at: new Date().toISOString(),
+              helpscout_configured: helpscout !== null,
               helpscout_mailboxes,
               productlift_portals,
               chatbase_agents,

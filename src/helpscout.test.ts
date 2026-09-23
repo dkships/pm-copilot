@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { HelpScoutClient } from "./helpscout.js";
+import { HelpScoutClient, parseHelpScoutConfig } from "./helpscout.js";
 
 const TOKEN_URL = "https://api.helpscout.net/v2/oauth2/token";
 
@@ -183,5 +183,36 @@ describe("HelpScoutClient 403 diagnosis", () => {
     await expect(client.fetchMailboxes()).rejects.toThrow(
       /user who owns this OAuth app.*deactivated or lost access/
     );
+  });
+});
+
+describe("parseHelpScoutConfig", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns the credentials when both are set", () => {
+    vi.stubEnv("HELPSCOUT_APP_ID", "app");
+    vi.stubEnv("HELPSCOUT_APP_SECRET", "secret");
+    expect(parseHelpScoutConfig()).toEqual({ appId: "app", appSecret: "secret" });
+  });
+
+  it("returns null when neither is set, so HelpScout is simply off", () => {
+    vi.stubEnv("HELPSCOUT_APP_ID", undefined);
+    vi.stubEnv("HELPSCOUT_APP_SECRET", undefined);
+    expect(parseHelpScoutConfig()).toBeNull();
+  });
+
+  it("treats blank values as unset", () => {
+    vi.stubEnv("HELPSCOUT_APP_ID", " ");
+    vi.stubEnv("HELPSCOUT_APP_SECRET", "");
+    expect(parseHelpScoutConfig()).toBeNull();
+  });
+
+  it("rejects a half-configured pair without echoing either value", () => {
+    vi.stubEnv("HELPSCOUT_APP_ID", "app-id-value");
+    vi.stubEnv("HELPSCOUT_APP_SECRET", undefined);
+    expect(() => parseHelpScoutConfig()).toThrow(/HELPSCOUT_APP_SECRET is missing/);
+    expect(() => parseHelpScoutConfig()).not.toThrow(/app-id-value/);
   });
 });
