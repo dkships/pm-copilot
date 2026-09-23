@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-09-22
+
+Opt-in comment analysis, bounded feature-request fetches, and much faster ProductLift paging.
+
 ### Added
 
 - `include_comments` on `synthesize_feedback` and `generate_product_plan` (default off). Customer
