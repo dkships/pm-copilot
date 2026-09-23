@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-09-23
+
+HelpScout becomes optional.
+
 ### Changed
 
 - HelpScout is optional. The server runs with any one of HelpScout, ProductLift or Chatbase
