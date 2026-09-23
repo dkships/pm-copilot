@@ -4,6 +4,11 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Fixed
+
+- A HelpScout 403 after a successful token request now says what it usually means: the user who
+  owns the OAuth app lost access, so rotating the secret won't help and a new app is needed.
+
 ## [1.7.0] — 2026-09-23
 
 A drill-down from a ranked theme to the records behind it.
