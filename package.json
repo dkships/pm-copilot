@@ -54,13 +54,13 @@
     "access": "public"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.1",
-    "dotenv": "^18.0.4",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "dotenv": "^18.0.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.4",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.3"
   }
 }
