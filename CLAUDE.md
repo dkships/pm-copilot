@@ -2,7 +2,7 @@
 
 # PM Copilot — MCP Server
 
-MCP server connecting an LLM to customer signal data (HelpScout support tickets + ProductLift feature requests). Architecture and quickstart: README.md. Contributor process: CONTRIBUTING.md.
+MCP server connecting an LLM to customer signal data (HelpScout support tickets, ProductLift feature requests, Chatbase AI support agent conversations). Architecture and quickstart: README.md. Contributor process: CONTRIBUTING.md.
 
 ## Commands
 
@@ -17,7 +17,8 @@ npm run eval        # Theme-matching precision/recall (--failures, --json, --fix
 npm run audit:ci    # Dependency audit gate (prepublishOnly runs build + test + this)
 ```
 
-Run `npm run build` after source changes before testing through an MCP client — clients execute `dist/index.js`. Restart Claude Code to pick up server changes. The server is registered via the project-scoped `.mcp.json`; re-add with `claude mcp add pm-copilot --scope project -- node dist/index.js`.
+- Run `npm run build` after source changes before testing through an MCP client — clients execute `dist/index.js`. Restart Claude Code to pick up server changes.
+- The server is registered via the project-scoped `.mcp.json`; re-add with `claude mcp add pm-copilot --scope project -- node dist/index.js`.
 
 ## PII guardrails (load-bearing for any PR)
 
