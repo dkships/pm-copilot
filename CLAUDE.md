@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # PM Copilot — MCP Server
 
 MCP server connecting an LLM to customer signal data (HelpScout support tickets + ProductLift feature requests). Architecture and quickstart: README.md. Contributor process: CONTRIBUTING.md.
