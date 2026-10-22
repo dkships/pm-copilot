@@ -313,7 +313,7 @@ export class ProductLiftClient {
 
   async fetchComments(postId: string): Promise<Comment[]> {
     const res = await this.apiGet<DataResponse<Comment[]> | PaginatedResponse<Comment>>(
-      `/api/v1/posts/${postId}/comments`
+      `/api/v1/posts/${encodeURIComponent(postId)}/comments`
     );
     if (Array.isArray(res.data)) {
       return res.data;

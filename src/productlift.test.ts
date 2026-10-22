@@ -528,3 +528,31 @@ describe("fetchFeatureRequests limit and sort", () => {
     expect(requests.map((r) => r.id)).toEqual(["old-popular", "new-quiet", "mid"]);
   });
 });
+
+describe("fetchComments path safety", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("encodes the post id so it cannot escape the comments route", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL) =>
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ProductLiftClient({
+      name: "acme",
+      baseUrl: "https://roadmap.acme.com",
+      apiKey: "k",
+    });
+    await client.fetchComments("../../admin?x=1");
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://roadmap.acme.com/api/v1/posts/..%2F..%2Fadmin%3Fx%3D1/comments"
+    );
+  });
+});
