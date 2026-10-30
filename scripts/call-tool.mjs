@@ -6,12 +6,18 @@
 //   npm run tool -- <tool_name> '<json-params>'
 //   e.g. npm run tool -- get_feature_requests '{"portal_name":"acme","status":"open"}'
 //
+// PM_COPILOT_* variables in the shell (fixture tickets, themes path) are passed
+// through to the server; credentials still come from .env.
+//
 // NOTE: tool output may include configured source names/URLs (and, for the
 // analysis tools, customer text that has already been PII-scrubbed). Redact
 // before pasting anywhere shared.
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import {
+  StdioClientTransport,
+  getDefaultEnvironment,
+} from "@modelcontextprotocol/sdk/client/stdio.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -19,9 +25,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const serverPath = resolve(here, "..", "dist", "index.js");
 const [name, rawParams] = process.argv.slice(2);
 
+// The SDK passes only a safe allowlist (HOME, PATH, ...) to the child, so
+// forward the server's own PM_COPILOT_* options explicitly.
+const serverOptions = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => key.startsWith("PM_COPILOT_"))
+);
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [serverPath],
+  env: { ...getDefaultEnvironment(), ...serverOptions },
 });
 const client = new Client({ name: "pm-copilot-tool-runner", version: "1.0.0" });
 await client.connect(transport);
