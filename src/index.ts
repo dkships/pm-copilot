@@ -19,7 +19,9 @@ import {
   HelpScoutClient,
   parseHelpScoutConfig,
   type Mailbox,
+  type TicketSource,
 } from "./helpscout.js";
+import { FixtureTicketSource, parseFixturePath } from "./fixture-tickets.js";
 import { allConfiguredFailed, type SourceStatus } from "./source-status.js";
 import {
   ProductLiftClient,
@@ -74,20 +76,32 @@ const READ_ONLY_TOOL = {
 } as const;
 
 // HelpScout setup — optional, like the other sources. Without it there are no
-// support tickets, so no severity scores and no convergence boost.
-let helpscout: HelpScoutClient | null = null;
+// support tickets, so no severity scores and no convergence boost. A fixture
+// file (PM_COPILOT_FIXTURE_TICKETS) takes the HelpScout slot instead of the API
+// and wins over any HelpScout credentials.
+let helpscout: TicketSource | null = null;
 let helpscoutConfigError: string | undefined;
-try {
-  const config = parseHelpScoutConfig();
-  if (config) {
-    helpscout = new HelpScoutClient(config.appId, config.appSecret);
+const fixturePath = parseFixturePath(PROJECT_ROOT);
+const fixtureSource = fixturePath ? new FixtureTicketSource(fixturePath) : null;
+if (fixtureSource) {
+  helpscout = fixtureSource;
+  console.error(`[pm-copilot] Loading support tickets from fixture ${fixtureSource.fileName}`);
+} else {
+  try {
+    const config = parseHelpScoutConfig();
+    if (config) {
+      helpscout = new HelpScoutClient(config.appId, config.appSecret);
+    }
+  } catch (error) {
+    helpscoutConfigError = error instanceof Error ? error.message : String(error);
+    console.error(`[pm-copilot] HelpScout config error: ${helpscoutConfigError}`);
   }
-} catch (error) {
-  helpscoutConfigError = error instanceof Error ? error.message : String(error);
-  console.error(`[pm-copilot] HelpScout config error: ${helpscoutConfigError}`);
 }
 
 function describeHelpScout(): string {
+  if (fixtureSource) {
+    return `fixture (${fixtureSource.fileName}, mailbox "fixture")`;
+  }
   if (helpscoutConfigError) {
     return `none (config error: ${helpscoutConfigError})`;
   }
@@ -496,6 +510,13 @@ async function fetchAndAnalyze(params: FetchParams): Promise<FetchedData> {
     warnings.push(
       "HelpScout is not configured: ticket counts are absent, not zero, so severity and " +
         "convergence don't apply. Don't read zero tickets as low support demand."
+    );
+  }
+  if (fixtureSource) {
+    // Say so in every analysis, so fixture tickets are never mistaken for live data.
+    warnings.push(
+      `Support tickets come from the local fixture file ${fixtureSource.fileName} ` +
+        "(PM_COPILOT_FIXTURE_TICKETS), not the HelpScout API."
     );
   }
 
@@ -1533,6 +1554,8 @@ server.registerTool("list_sources", {
             {
               fetched_at: new Date().toISOString(),
               helpscout_configured: helpscout !== null,
+              helpscout_source: fixtureSource ? "fixture" : helpscout ? "api" : null,
+              ...(fixtureSource && { fixture_tickets_file: fixtureSource.fileName }),
               helpscout_mailboxes,
               productlift_portals,
               chatbase_agents,

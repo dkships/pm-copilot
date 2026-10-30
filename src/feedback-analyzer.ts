@@ -147,23 +147,31 @@ export interface FormattedFeatureRequest {
 
 // ── Config loader ──
 
+const THEMES_PATH_ENV = "PM_COPILOT_THEMES_PATH";
+
+/**
+ * Load the theme config: themes.config.json at the project root, or the file
+ * named by PM_COPILOT_THEMES_PATH. A relative override resolves against the
+ * project root, not the working directory.
+ */
 export function loadThemesConfig(): ThemesConfig {
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const configPath = resolve(__dirname, "..", "themes.config.json");
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const override = process.env[THEMES_PATH_ENV]?.trim();
+  const configPath = resolve(projectRoot, override || "themes.config.json");
   let config: ThemesConfig;
   try {
     const raw = readFileSync(configPath, "utf-8");
     config = JSON.parse(raw) as ThemesConfig;
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Failed to load themes.config.json (${configPath}): ${msg}. ` +
-        "The file must exist at the project root and contain valid JSON."
-    );
+    const hint = override
+      ? `Check ${THEMES_PATH_ENV}: the file must exist and contain valid JSON.`
+      : "The file must exist at the project root and contain valid JSON.";
+    throw new Error(`Failed to load themes config (${configPath}): ${msg}. ${hint}`);
   }
   if (!Array.isArray(config.themes)) {
     throw new Error(
-      'Invalid themes.config.json: "themes" must be an array of theme definitions.'
+      `Invalid themes config (${configPath}): "themes" must be an array of theme definitions.`
     );
   }
   return config;

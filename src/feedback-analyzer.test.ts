@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   analyzeFeedback,
+  loadThemesConfig,
   matchesTheme,
   type ThemesConfig,
   type FormattedConversation,
@@ -305,5 +309,47 @@ describe("emerging themes", () => {
     for (const e of r.emerging_themes) {
       expect(e.ngram).not.toMatch(/redacted/);
     }
+  });
+});
+
+describe("loadThemesConfig", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const writeConfig = (body: string): string => {
+    const path = join(mkdtempSync(join(tmpdir(), "pm-copilot-themes-")), "themes.json");
+    writeFileSync(path, body);
+    return path;
+  };
+
+  it("reads the project themes.config.json when PM_COPILOT_THEMES_PATH is unset", () => {
+    vi.stubEnv("PM_COPILOT_THEMES_PATH", "");
+    const loaded = loadThemesConfig();
+    expect(loaded.version).toBe(3);
+    expect(loaded.themes.map((t) => t.id)).toContain("booking-scheduling");
+  });
+
+  it("reads the file named by PM_COPILOT_THEMES_PATH", () => {
+    const custom: ThemesConfig = {
+      version: 3,
+      themes: [{ id: "dispatch", label: "Dispatch", keywords: ["reassign"], category: "core" }],
+      stop_words: [],
+      emerging_theme_min_frequency: 3,
+    };
+    vi.stubEnv("PM_COPILOT_THEMES_PATH", writeConfig(JSON.stringify(custom)));
+    expect(loadThemesConfig()).toEqual(custom);
+  });
+
+  it("names the override path and variable when the file is missing", () => {
+    const missing = join(tmpdir(), "pm-copilot-no-such-themes.json");
+    vi.stubEnv("PM_COPILOT_THEMES_PATH", missing);
+    expect(() => loadThemesConfig()).toThrow(missing);
+    expect(() => loadThemesConfig()).toThrow(/PM_COPILOT_THEMES_PATH/);
+  });
+
+  it("rejects an override without a themes array", () => {
+    vi.stubEnv("PM_COPILOT_THEMES_PATH", writeConfig(JSON.stringify({ version: 3 })));
+    expect(() => loadThemesConfig()).toThrow(/"themes" must be an array/);
   });
 });

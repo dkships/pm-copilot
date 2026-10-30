@@ -44,6 +44,8 @@ Loaded from `.env` via dotenv with `override: true` — `.env` values win over a
 | `CHATBASE_AGENTS` | No† | Multi-agent: `name\|agentId,name2\|agentId2` |
 | `CHATBASE_AGENT_ID` | No† | Single agent id |
 | `CHATBASE_AGENT_NAME` | No† | Single agent display name (default: "default") |
+| `PM_COPILOT_FIXTURE_TICKETS` | No | JSON file of HelpScout-shaped tickets read instead of the HelpScout API (mailbox `fixture`); wins over HelpScout keys |
+| `PM_COPILOT_THEMES_PATH` | No | Theme config read instead of `themes.config.json` |
 
 ‡HelpScout is optional: set both or neither (one alone is a config error). At least one source must
 be configured or the server exits. Without HelpScout there's no severity or convergence signal.

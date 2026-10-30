@@ -71,7 +71,16 @@ export interface FetchOptions {
   mailboxId?: string;
 }
 
-export class HelpScoutClient {
+/**
+ * Where support tickets come from: the HelpScout API, or a local fixture file
+ * of HelpScout-shaped conversations (see fixture-tickets.ts).
+ */
+export interface TicketSource {
+  fetchConversations(options: FetchOptions): Promise<Conversation[]>;
+  fetchMailboxes(): Promise<Mailbox[]>;
+}
+
+export class HelpScoutClient implements TicketSource {
   private appId: string;
   private appSecret: string;
   private token: TokenState | null = null;
