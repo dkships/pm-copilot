@@ -49,6 +49,7 @@ import {
   formatFeatureRequest,
   formatDeflectedConversation,
   extractQuotesForTheme,
+  countThemeMatches,
   buildEvidenceSummary,
   trimAnalysisForDetail,
   toErrorResult,
@@ -1134,6 +1135,7 @@ server.registerTool("generate_product_plan", {
 
     // Build priorities from top themes
     const topThemes = data.analysis.themes.slice(0, max_priorities);
+    const themeCounts = countThemeMatches(data.analysis.themes);
 
     const priorities = topThemes.map((theme, index) => {
       const quotes = extractQuotesForTheme(
@@ -1141,7 +1143,8 @@ server.registerTool("generate_product_plan", {
         conversationMap,
         featureRequestMap,
         3,
-        deflectedMap
+        deflectedMap,
+        themeCounts
       );
 
       const base = {

@@ -3,6 +3,9 @@ import {
   formatConversation,
   formatFeatureRequest,
   trimAnalysisForDetail,
+  extractQuotesForTheme,
+  countThemeMatches,
+  buildLookupMaps,
   buildThemeEvidence,
   capTitles,
   signalTypeOf,
@@ -254,6 +257,74 @@ describe("trimAnalysisForDetail", () => {
     for (const q of result.themes[0]!.representative_quotes) {
       expect(q).not.toContain("\n");
     }
+  });
+});
+
+describe("quote selection", () => {
+  // hs-1 raises billing and an outage; hs-2 and hs-3 are only about billing.
+  const sink = new Set<string>();
+  const conversations = [
+    formatConversation(conv({ id: 1, preview: "Invoice is wrong and the site was down" }), sink),
+    formatConversation(conv({ id: 2, preview: "Invoice total is wrong" }), sink),
+    formatConversation(conv({ id: 3, preview: "Charged twice on the invoice" }), sink),
+  ];
+  const billing = theme({
+    reactive_count: 3,
+    proactive_count: 0,
+    convergent: false,
+    data_points: [
+      { id: "hs-1", source: "REACTIVE", title: "Billing question" },
+      { id: "hs-2", source: "REACTIVE", title: "Billing question" },
+      { id: "hs-3", source: "REACTIVE", title: "Billing question" },
+    ],
+  });
+  const outage = theme({
+    theme_id: "outage",
+    label: "Outage",
+    reactive_count: 1,
+    proactive_count: 0,
+    convergent: false,
+    data_points: [{ id: "hs-1", source: "REACTIVE", title: "Billing question" }],
+  });
+
+  it("counts how many themes each data point matched", () => {
+    const counts = countThemeMatches([billing, outage]);
+    expect(counts.get("hs-1")).toBe(2);
+    expect(counts.get("hs-2")).toBe(1);
+  });
+
+  it("quotes tickets that match only this theme before ones that match several", () => {
+    const { convMap, reqMap } = buildLookupMaps(conversations, []);
+    const quotes = extractQuotesForTheme(
+      billing.data_points,
+      convMap,
+      reqMap,
+      3,
+      new Map(),
+      countThemeMatches([billing, outage])
+    );
+    expect(quotes).toEqual([
+      '[Support ticket] "Invoice total is wrong"',
+      '[Support ticket] "Charged twice on the invoice"',
+      '[Support ticket] "Invoice is wrong and the site was down"',
+    ]);
+  });
+
+  it("keeps the original order without match counts", () => {
+    const { convMap, reqMap } = buildLookupMaps(conversations, []);
+    const quotes = extractQuotesForTheme(billing.data_points, convMap, reqMap, 1);
+    expect(quotes).toEqual(['[Support ticket] "Invoice is wrong and the site was down"']);
+  });
+
+  it("applies the preference to representative quotes in the analysis", () => {
+    const result = trimAnalysisForDetail(
+      analysis({ themes: [billing, outage] }),
+      "summary",
+      conversations,
+      []
+    ) as { themes: Array<{ theme_id: string; representative_quotes: string[] }> };
+    const billingQuotes = result.themes.find((t) => t.theme_id === "billing")?.representative_quotes;
+    expect(billingQuotes?.[0]).toBe('[Support ticket] "Invoice total is wrong"');
   });
 });
 

@@ -239,16 +239,39 @@ export function capTitles(dataPoints: ThemeMatch["data_points"]): {
 
 // ── Quote extraction for product plans ──
 
+/** How many themes each data point matched, keyed by data point id. */
+export function countThemeMatches(themes: ThemeMatch[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const theme of themes) {
+    for (const dp of theme.data_points) {
+      counts.set(dp.id, (counts.get(dp.id) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * Pick representative quotes for a theme. With themeCounts, signals that
+ * matched only this theme are quoted before ones that matched several: a
+ * ticket about a crash that also mentions a duplicate booking is evidence for
+ * both themes, but a poor headline for either. Order is otherwise kept.
+ */
 export function extractQuotesForTheme(
   themeDataPoints: Array<{ id: string; source: SignalType; title: string }>,
   conversationMap: Map<string, FormattedConversation>,
   featureRequestMap: Map<string, FormattedFeatureRequest>,
   maxQuotes: number = 3,
-  deflectedMap: Map<string, FormattedDeflectedConversation> = new Map()
+  deflectedMap: Map<string, FormattedDeflectedConversation> = new Map(),
+  themeCounts: Map<string, number> = new Map()
 ): string[] {
   const quotes: string[] = [];
 
-  for (const dp of themeDataPoints) {
+  // Array.prototype.sort is stable, so ties keep their original order.
+  const ordered = [...themeDataPoints].sort(
+    (a, b) => (themeCounts.get(a.id) ?? 1) - (themeCounts.get(b.id) ?? 1)
+  );
+
+  for (const dp of ordered) {
     if (quotes.length >= maxQuotes) break;
 
     if (dp.source === "DEFLECTED") {
@@ -339,6 +362,7 @@ export function trimAnalysisForDetail(
     featureRequests,
     deflected
   );
+  const themeCounts = countThemeMatches(analysis.themes);
 
   const themes = analysis.themes.map((theme) => {
     const quotes = extractQuotesForTheme(
@@ -346,7 +370,8 @@ export function trimAnalysisForDetail(
       convMap,
       reqMap,
       3,
-      deflectedMap
+      deflectedMap,
+      themeCounts
     );
 
     const base = {
